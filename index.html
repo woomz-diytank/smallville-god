@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smallville God - 小镇之神</title>
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <div id="game-container">
+    <header id="game-header">
+      <h1 id="game-title">小镇之神</h1>
+      <div id="time-display">
+        <span id="day-display">第 1 天</span>
+        <span id="hour-display">06:00</span>
+      </div>
+      <div id="resources">
+        <div id="faith-container">
+          <span id="faith-label">信仰</span>
+          <div id="faith-bar-container">
+            <div id="faith-bar"></div>
+          </div>
+          <span id="faith-value">0/100</span>
+        </div>
+        <div id="power-container">
+          <span id="power-label">神力</span>
+          <span id="power-value">50/100</span>
+        </div>
+      </div>
+      <div id="controls">
+        <button id="btn-pause" title="暂停/继续">▶</button>
+        <button id="btn-speed" title="速度">1x</button>
+        <button id="btn-lang" title="语言切换">EN</button>
+      </div>
+    </header>
+
+    <main id="game-main">
+      <canvas id="game-canvas"></canvas>
+
+      <aside id="npc-panel" class="hidden">
+        <button id="panel-close">×</button>
+        <div id="npc-avatar"></div>
+        <h2 id="npc-name"></h2>
+        <p id="npc-role"></p>
+        <div id="npc-stats">
+          <div id="npc-location"></div>
+          <div id="npc-action"></div>
+          <div id="npc-faith"></div>
+        </div>
+        <div id="npc-thoughts">
+          <h3>内心想法</h3>
+          <p id="npc-thought-text"></p>
+        </div>
+      </aside>
+
+      <div id="oracle-panel">
+        <h3 id="oracle-title">神谕</h3>
+        <div id="oracle-skills">
+          <button id="skill-light" class="skill-btn" title="神圣之光 (消耗20神力)">☀</button>
+        </div>
+        <div id="oracle-input-container">
+          <select id="oracle-target">
+            <option value="all">全体广播</option>
+            <option value="elara">Elara</option>
+            <option value="sly">Sly</option>
+          </select>
+          <input type="text" id="oracle-input" placeholder="输入神谕消息...">
+          <button id="oracle-send">发送</button>
+        </div>
+        <div id="oracle-cost">消耗: 10 神力</div>
+      </div>
+    </main>
+
+    <div id="loading-overlay" class="hidden">
+      <div id="loading-spinner"></div>
+      <p id="loading-text">神意降临中...</p>
+    </div>
+
+    <div id="game-over-modal" class="hidden">
+      <div id="modal-content">
+        <h2 id="modal-title"></h2>
+        <p id="modal-message"></p>
+        <button id="modal-restart">重新开始</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
