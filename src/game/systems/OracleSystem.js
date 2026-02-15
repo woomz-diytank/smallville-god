@@ -59,26 +59,35 @@ class OracleSystemManager {
     try {
       let reactions;
       let newSchedule;
+      let llmSuccess = false;
 
       if (GeminiClient.isAvailable()) {
         // Use LLM to generate responses
         const gameState = ScheduleSystem.getCurrentStateForLLM();
         const prompt = buildOracleResponsePrompt(gameState, oracle);
 
+        console.log('[OracleSystem] Sending prompt to LLM...');
+
         try {
           const llmResponse = await GeminiClient.generateJSON(prompt);
+          console.log('[OracleSystem] LLM response received:', llmResponse);
           const parsed = parseOracleResponse(llmResponse);
           reactions = parsed.reactions;
           newSchedule = parsed.schedule;
+          llmSuccess = true;
+          console.log('[OracleSystem] LLM parsing successful');
         } catch (error) {
-          console.error('LLM processing failed, using fallback:', error);
+          console.error('[OracleSystem] LLM processing failed, using fallback:', error);
           reactions = this.generateFallbackReactions(oracle);
           newSchedule = null;
+          llmSuccess = false;
         }
       } else {
         // Fallback mode without LLM
+        console.log('[OracleSystem] LLM not available, using fallback');
         reactions = this.generateFallbackReactions(oracle);
         newSchedule = null;
+        llmSuccess = false;
       }
 
       // Apply reactions to NPCs
@@ -128,9 +137,10 @@ class OracleSystemManager {
 
       GameState.setLoading(false);
 
-      this.onOracleProcessed(oracle, reactions);
+      console.log('[OracleSystem] Oracle processed, LLM success:', llmSuccess);
+      this.onOracleProcessed(oracle, reactions, llmSuccess);
 
-      return { success: true, reactions };
+      return { success: true, reactions, usedLLM: llmSuccess };
 
     } catch (error) {
       console.error('Oracle processing error:', error);

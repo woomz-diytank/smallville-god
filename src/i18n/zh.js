@@ -16,6 +16,7 @@ export default {
 
   // NPC Panel
   thoughts: '内心想法',
+  npcThoughts: 'NPC 心理活动',
   location: '位置',
   action: '动作',
   faithLevel: '信仰',

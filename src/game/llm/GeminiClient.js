@@ -16,7 +16,9 @@ class GeminiClientManager {
 
     try {
       this.client = new GoogleGenerativeAI(apiKey);
-      this.model = this.client.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const modelName = import.meta.env.VITE_GEMINI_MODEL || 'gemini-1.5-flash';
+      this.model = this.client.getGenerativeModel({ model: modelName });
+      console.log(`Gemini model initialized: ${modelName}`);
       return true;
     } catch (error) {
       console.error('Failed to initialize Gemini client:', error);
@@ -35,9 +37,11 @@ class GeminiClientManager {
 
     const generationConfig = {
       temperature: options.temperature ?? 0.8,
-      maxOutputTokens: options.maxTokens ?? 2048,
+      maxOutputTokens: options.maxTokens ?? 8192,
       topP: 0.9,
     };
+
+    console.log('[GeminiClient] Calling API with prompt length:', prompt.length);
 
     try {
       const result = await this.model.generateContent({
@@ -48,9 +52,12 @@ class GeminiClientManager {
       const response = result.response;
       const text = response.text();
 
+      console.log('[GeminiClient] API call successful, response length:', text.length);
+
       return text;
     } catch (error) {
-      console.error('Gemini API error:', error);
+      console.error('[GeminiClient] Gemini API error:', error);
+      console.error('[GeminiClient] Error details:', error.message);
       throw error;
     }
   }
@@ -58,32 +65,54 @@ class GeminiClientManager {
   async generateJSON(prompt, options = {}) {
     const jsonPrompt = `${prompt}
 
-IMPORTANT: Your response must be ONLY valid JSON. Do not include any markdown formatting, code blocks, or explanation text. Start directly with { or [.`;
+【重要】你的回复必须是纯 JSON 格式。不要包含任何 markdown 格式、代码块或解释文字。直接以 { 或 [ 开头。`;
+
+    console.log('[GeminiClient] Generating JSON response...');
 
     const text = await this.generate(jsonPrompt, options);
+
+    console.log('[GeminiClient] Raw response length:', text.length);
+    console.log('[GeminiClient] Raw response preview:', text.substring(0, 800));
 
     // Try to extract JSON from the response
     let jsonText = text.trim();
 
-    // Remove markdown code blocks if present
-    if (jsonText.startsWith('```')) {
-      const match = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (match) {
-        jsonText = match[1].trim();
-      }
+    // Remove markdown code blocks if present (handle various formats)
+    const codeBlockMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      jsonText = codeBlockMatch[1].trim();
+      console.log('[GeminiClient] Extracted from code block');
     }
 
-    // Find JSON object or array
-    const jsonMatch = jsonText.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-    if (jsonMatch) {
-      jsonText = jsonMatch[1];
+    // Try to find the outermost JSON object
+    const firstBrace = jsonText.indexOf('{');
+    const lastBrace = jsonText.lastIndexOf('}');
+
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+      console.log('[GeminiClient] Extracted JSON object from position', firstBrace, 'to', lastBrace);
     }
 
     try {
-      return JSON.parse(jsonText);
+      const parsed = JSON.parse(jsonText);
+      console.log('[GeminiClient] JSON parsed successfully');
+      return parsed;
     } catch (error) {
-      console.error('Failed to parse JSON response:', jsonText);
-      throw new Error('Invalid JSON response from LLM');
+      console.error('[GeminiClient] JSON parse error:', error.message);
+      console.error('[GeminiClient] Attempted to parse:', jsonText.substring(0, 1500));
+
+      // Try to fix common JSON issues
+      try {
+        // Remove trailing commas before } or ]
+        let fixedJson = jsonText.replace(/,(\s*[}\]])/g, '$1');
+        // Try parsing again
+        const parsed = JSON.parse(fixedJson);
+        console.log('[GeminiClient] JSON parsed after fixing trailing commas');
+        return parsed;
+      } catch (e) {
+        console.error('[GeminiClient] Could not fix JSON');
+        throw new Error('Invalid JSON response from LLM');
+      }
     }
   }
 }

@@ -16,6 +16,7 @@ export default {
 
   // NPC Panel
   thoughts: 'Inner Thoughts',
+  npcThoughts: 'NPC Reactions',
   location: 'Location',
   action: 'Action',
   faithLevel: 'Faith',

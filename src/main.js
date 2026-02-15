@@ -9,6 +9,7 @@ import { buildDailyScriptPrompt } from './game/llm/prompts.js';
 import { parseDailyScript } from './game/llm/scriptParser.js';
 import NPCPanel from './game/ui/NPCPanel.js';
 import OraclePanel from './game/ui/OraclePanel.js';
+import MessageLog from './game/ui/MessageLog.js';
 
 class Game {
   constructor() {
@@ -53,13 +54,14 @@ class Game {
     });
 
     OracleSystem.init({
-      onOracleProcessed: (oracle, reactions) => this.onOracleProcessed(oracle, reactions)
+      onOracleProcessed: (oracle, reactions, usedLLM) => this.onOracleProcessed(oracle, reactions, usedLLM)
     });
 
     // Initialize UI components
     NPCPanel.init();
     OraclePanel.init();
     OraclePanel.updateTargetOptions();
+    MessageLog.init();
 
     // Bind control events
     this.bindEvents();
@@ -161,9 +163,12 @@ class Game {
     await this.generateDailyScript();
   }
 
-  onOracleProcessed(oracle, reactions) {
-    console.log('Oracle processed:', oracle.type, reactions);
-    // Reactions are already applied, just log for debug
+  onOracleProcessed(oracle, reactions, usedLLM) {
+    console.log('Oracle processed:', oracle.type, 'LLM:', usedLLM, reactions);
+    // Update LLM status indicator
+    MessageLog.setLLMStatus(usedLLM);
+    // Display NPC reactions in message log
+    MessageLog.addReactions(oracle, reactions);
   }
 
   updateUI() {
@@ -235,6 +240,9 @@ class Game {
     if (thoughtsHeader) {
       thoughtsHeader.textContent = GameState.t('thoughts');
     }
+
+    // Update message log title
+    MessageLog.updateLanguage();
   }
 
   showGameOver(victory) {

@@ -44,6 +44,8 @@ export function parseDailyScript(llmResponse) {
  * Parse oracle response from LLM
  */
 export function parseOracleResponse(llmResponse) {
+  console.log('[scriptParser] Parsing oracle response:', llmResponse);
+
   const result = {
     reactions: {},
     schedule: {}
@@ -51,13 +53,18 @@ export function parseOracleResponse(llmResponse) {
 
   // Parse reactions
   if (llmResponse.reactions) {
+    console.log('[scriptParser] Found reactions:', Object.keys(llmResponse.reactions));
     for (const [npcId, reaction] of Object.entries(llmResponse.reactions)) {
       result.reactions[npcId] = {
         interpretation: reaction.interpretation || '',
+        innerConflict: reaction.innerConflict || '',
         faithChange: parseFaithChange(reaction.faithChange),
         newThought: reaction.newThought || ''
       };
+      console.log(`[scriptParser] Parsed ${npcId}:`, result.reactions[npcId]);
     }
+  } else {
+    console.warn('[scriptParser] No reactions found in response');
   }
 
   // Parse schedule
@@ -65,6 +72,7 @@ export function parseOracleResponse(llmResponse) {
     result.schedule = parseDailyScript(llmResponse.schedule);
   }
 
+  console.log('[scriptParser] Final parsed result:', result);
   return result;
 }
 
