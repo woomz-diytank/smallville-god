@@ -1,140 +1,90 @@
-import { FAITH_CHANGE } from '../constants.js';
-import { ALL_ACTIONS, ACTIONS_BY_LOCATION } from '../data/npcProfiles.js';
+import behaviorLibrary from '../data/behaviorLibrary.json';
+import { TEXT_LIMIT } from '../config.js';
 
-const VALID_LOCATIONS = ['altar', 'tavern', 'plaza', 'forest'];
+const VALID_LOCATIONS = new Set(Object.keys(behaviorLibrary.locations));
 
-/**
- * Parse and validate LLM-generated daily script
- */
-export function parseDailyScript(llmResponse) {
-  const parsed = {};
+const ALL_SKILL_IDS = new Set();
+for (const group of Object.values(behaviorLibrary.skills.PHYSICAL).flat()) {
+  ALL_SKILL_IDS.add(group.id);
+}
+for (const s of behaviorLibrary.skills.SOCIAL) ALL_SKILL_IDS.add(s.id);
+for (const s of behaviorLibrary.skills.MENTAL) ALL_SKILL_IDS.add(s.id);
+for (const s of behaviorLibrary.skills.RESTORE) ALL_SKILL_IDS.add(s.id);
+ALL_SKILL_IDS.add('practice');
+ALL_SKILL_IDS.add('learn_from');
 
-  for (const [npcId, schedule] of Object.entries(llmResponse)) {
-    if (!Array.isArray(schedule)) continue;
+const NPC_IDS = new Set(Object.keys(behaviorLibrary.npcs));
 
-    parsed[npcId] = schedule.map(entry => {
-      const location = VALID_LOCATIONS.includes(entry.location) ? entry.location : 'plaza';
-      const validActionsForLoc = ACTIONS_BY_LOCATION[location] || [];
-
-      // Validate action is valid for this location, otherwise pick a default
-      let action = entry.action;
-      if (!validActionsForLoc.includes(action)) {
-        // Try to find the action in ALL_ACTIONS (maybe wrong location)
-        if (ALL_ACTIONS.includes(action)) {
-          // Keep it anyway, just a minor mismatch
-        } else {
-          // Unknown action, pick a default for this location
-          action = validActionsForLoc[0] || 'wandering';
-        }
-      }
-
-      return {
-        hour: Number(entry.hour),
-        location,
-        action,
-        thought: entry.thought || '...'
-      };
-    }).filter(entry => entry.hour >= 0 && entry.hour < 24);
-  }
-
-  return parsed;
+const CN_TO_ID = new Map();
+for (const [id, def] of Object.entries(behaviorLibrary.npcs)) {
+  CN_TO_ID.set(def.nameCn, id);
 }
 
 /**
- * Parse oracle response from LLM
+ * Parse and validate LLM output for a group tick.
+ *
+ * Expected input: { actions: [...], talks?: [...] } or legacy array [...]
+ * Returns: { actions: Map<npcId, { location, skill, brief }>, talks: Array }
  */
-export function parseOracleResponse(llmResponse) {
-  console.log('[scriptParser] Parsing oracle response:', llmResponse);
+export function parseGroupResponse(llmResult, npcGroup) {
+  const actions = new Map();
+  const talks = [];
 
-  const result = {
-    reactions: {},
-    schedule: {}
-  };
-
-  // Parse reactions
-  if (llmResponse.reactions) {
-    console.log('[scriptParser] Found reactions:', Object.keys(llmResponse.reactions));
-    for (const [npcId, reaction] of Object.entries(llmResponse.reactions)) {
-      result.reactions[npcId] = {
-        interpretation: reaction.interpretation || '',
-        innerConflict: reaction.innerConflict || '',
-        faithChange: parseFaithChange(reaction.faithChange),
-        newThought: reaction.newThought || ''
-      };
-      console.log(`[scriptParser] Parsed ${npcId}:`, result.reactions[npcId]);
-    }
+  let actionList, talkList;
+  if (Array.isArray(llmResult)) {
+    actionList = llmResult;
+    talkList = [];
+  } else if (llmResult && typeof llmResult === 'object') {
+    actionList = Array.isArray(llmResult.actions) ? llmResult.actions : [];
+    talkList = Array.isArray(llmResult.talks) ? llmResult.talks : [];
   } else {
-    console.warn('[scriptParser] No reactions found in response');
+    console.warn('[Parser] LLM result unexpected type:', typeof llmResult);
+    return { actions, talks };
   }
 
-  // Parse schedule
-  if (llmResponse.schedule) {
-    result.schedule = parseDailyScript(llmResponse.schedule);
+  const groupNpcIds = new Set(npcGroup.map(n => n.id));
+  const npcNameMap = new Map(npcGroup.map(n => [n.id, n.nameCn]));
+
+  for (const entry of actionList) {
+    if (!entry || typeof entry !== 'object') continue;
+
+    const id = entry.id;
+    if (!id || !NPC_IDS.has(id) || !groupNpcIds.has(id)) continue;
+
+    const npcDef = behaviorLibrary.npcs[id];
+    const allNpcSkills = new Set([
+      ...npcDef.skills.PHYSICAL,
+      ...npcDef.skills.SOCIAL,
+      ...npcDef.skills.MENTAL,
+      ...npcDef.skills.RESTORE,
+      'practice', 'learn_from',
+    ]);
+
+    const location = VALID_LOCATIONS.has(entry.loc) ? entry.loc : null;
+    const skill = ALL_SKILL_IDS.has(entry.skill) && allNpcSkills.has(entry.skill)
+      ? entry.skill : null;
+    const brief = typeof entry.brief === 'string'
+      ? entry.brief.slice(0, TEXT_LIMIT.BRIEF_MAX) : '';
+
+    if (location && skill) {
+      actions.set(id, { location, skill, brief });
+    } else {
+      console.warn(`[Parser] Invalid entry for ${id}: loc=${entry.loc} skill=${entry.skill}`);
+    }
   }
 
-  console.log('[scriptParser] Final parsed result:', result);
-  return result;
-}
+  for (const line of talkList) {
+    if (!line || typeof line !== 'object') continue;
+    let who = line.who;
+    const say = typeof line.say === 'string' ? line.say.slice(0, TEXT_LIMIT.SAY_MAX) : '';
+    if (!who || !say) continue;
 
-/**
- * Convert faith change enum to numeric value
- */
-export function parseFaithChange(changeStr) {
-  const changeMap = {
-    'STRONG_INCREASE': FAITH_CHANGE.STRONG_INCREASE,
-    'INCREASE': FAITH_CHANGE.INCREASE,
-    'SLIGHT_INCREASE': FAITH_CHANGE.SLIGHT_INCREASE,
-    'NEUTRAL': FAITH_CHANGE.NEUTRAL,
-    'SLIGHT_DECREASE': FAITH_CHANGE.SLIGHT_DECREASE,
-    'DECREASE': FAITH_CHANGE.DECREASE,
-    'STRONG_DECREASE': FAITH_CHANGE.STRONG_DECREASE
-  };
+    if (CN_TO_ID.has(who)) who = CN_TO_ID.get(who);
+    if (!NPC_IDS.has(who)) continue;
 
-  return changeMap[changeStr] ?? FAITH_CHANGE.NEUTRAL;
-}
-
-/**
- * Validate and sanitize NPC schedule entry
- */
-export function validateScheduleEntry(entry) {
-  const location = VALID_LOCATIONS.includes(entry.location) ? entry.location : 'plaza';
-  const validActionsForLoc = ACTIONS_BY_LOCATION[location] || [];
-
-  let action = entry.action;
-  if (!validActionsForLoc.includes(action) && !ALL_ACTIONS.includes(action)) {
-    action = validActionsForLoc[0] || 'wandering';
+    const speakerName = npcNameMap.get(who) || behaviorLibrary.npcs[who]?.nameCn || who;
+    talks.push({ speaker: speakerName, speakerId: who, text: say });
   }
 
-  return {
-    hour: Math.max(0, Math.min(23, Number(entry.hour) || 0)),
-    location,
-    action,
-    thought: typeof entry.thought === 'string' ? entry.thought.slice(0, 200) : '...'
-  };
-}
-
-/**
- * Generate fallback reaction when LLM fails
- */
-export function generateFallbackReaction(npc, oracleType) {
-  const isDevout = npc.faith > 50;
-
-  if (oracleType === 'holy_light') {
-    return {
-      interpretation: isDevout
-        ? '神圣的光芒！这是神明的恩赐！'
-        : '那是什么光...可能只是天气变化吧。',
-      faithChange: isDevout ? FAITH_CHANGE.INCREASE : FAITH_CHANGE.SLIGHT_INCREASE,
-      newThought: isDevout ? '我感受到了神的存在...' : '奇怪的现象...'
-    };
-  }
-
-  // Message oracle
-  return {
-    interpretation: isDevout
-      ? '神明的话语传入我心...'
-      : '又是那些神神叨叨的东西...',
-    faithChange: isDevout ? FAITH_CHANGE.SLIGHT_INCREASE : FAITH_CHANGE.NEUTRAL,
-    newThought: isDevout ? '我会铭记这启示...' : '不过是巧合罢了...'
-  };
+  return { actions, talks };
 }

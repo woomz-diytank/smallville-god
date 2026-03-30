@@ -1,291 +1,259 @@
 import './style.css';
 import GameState from './game/GameState.js';
-import Renderer from './game/Renderer.js';
-import TimeSystem from './game/systems/TimeSystem.js';
-import ScheduleSystem from './game/systems/ScheduleSystem.js';
-import OracleSystem from './game/systems/OracleSystem.js';
-import GeminiClient from './game/llm/GeminiClient.js';
-import { buildDailyScriptPrompt } from './game/llm/prompts.js';
-import { parseDailyScript } from './game/llm/scriptParser.js';
-import NPCPanel from './game/ui/NPCPanel.js';
-import OraclePanel from './game/ui/OraclePanel.js';
-import MessageLog from './game/ui/MessageLog.js';
+import BehaviorSystem from './game/systems/BehaviorSystem.js';
+import behaviorLibrary from './game/data/behaviorLibrary.json';
+import { TIME, UI } from './game/config.js';
 
 class Game {
   constructor() {
-    this.elements = {};
-    this.animationId = null;
+    this.tickTimer = null;
   }
 
-  async init() {
-    // Cache DOM elements
-    this.elements = {
-      title: document.getElementById('game-title'),
-      dayDisplay: document.getElementById('day-display'),
-      hourDisplay: document.getElementById('hour-display'),
-      faithBar: document.getElementById('faith-bar'),
-      faithValue: document.getElementById('faith-value'),
-      powerValue: document.getElementById('power-value'),
-      faithLabel: document.getElementById('faith-label'),
-      powerLabel: document.getElementById('power-label'),
+  init() {
+    BehaviorSystem.init();
+    this._cacheDOM();
+    this._bindEvents();
+    GameState.subscribe(() => this.render());
+    this.render();
+    this._updateTimeline();
+
+    const llmOn = BehaviorSystem.llmAvailable;
+    const badge = document.getElementById('llm-badge');
+    badge.textContent = llmOn ? 'LLM' : 'Rules';
+    badge.className = llmOn ? 'on' : 'off';
+    console.log(`[Game] LLM ${llmOn ? 'ON' : 'OFF (set VITE_GEMINI_API_KEY in .env)'}`);
+  }
+
+  _cacheDOM() {
+    this.els = {
+      day: document.getElementById('day-display'),
+      hour: document.getElementById('hour-display'),
+      phase: document.getElementById('phase-display'),
       pauseBtn: document.getElementById('btn-pause'),
       speedBtn: document.getElementById('btn-speed'),
-      langBtn: document.getElementById('btn-lang'),
-      loadingOverlay: document.getElementById('loading-overlay'),
-      loadingText: document.getElementById('loading-text'),
-      gameOverModal: document.getElementById('game-over-modal'),
-      modalTitle: document.getElementById('modal-title'),
-      modalMessage: document.getElementById('modal-message'),
-      restartBtn: document.getElementById('modal-restart'),
-      oracleTitle: document.getElementById('oracle-title')
+      logContent: document.getElementById('log-content'),
+      dialogueContent: document.getElementById('dialogue-content'),
+      timelineNodes: document.getElementById('timeline-nodes'),
+      timelineLabel: document.getElementById('timeline-label'),
+      locationCards: {},
     };
-
-    // Initialize Gemini client
-    const llmAvailable = GeminiClient.init();
-    console.log('LLM available:', llmAvailable);
-
-    // Initialize renderer
-    Renderer.init();
-
-    // Initialize systems
-    TimeSystem.init({
-      onHourChange: (hour, day) => this.onHourChange(hour, day),
-      onDayChange: (day) => this.onDayChange(day)
-    });
-
-    OracleSystem.init({
-      onOracleProcessed: (oracle, reactions, usedLLM) => this.onOracleProcessed(oracle, reactions, usedLLM)
-    });
-
-    // Initialize UI components
-    NPCPanel.init();
-    OraclePanel.init();
-    OraclePanel.updateTargetOptions();
-    MessageLog.init();
-
-    // Bind control events
-    this.bindEvents();
-
-    // Subscribe to state changes
-    this.subscribeToStateChanges();
-
-    // Generate initial schedule
-    await this.generateDailyScript();
-
-    // Apply initial schedule
-    ScheduleSystem.applyScheduleForHour(GameState.get('time.hour'));
-
-    // Update UI
-    this.updateUI();
-
-    // Start render loop
-    this.startRenderLoop();
-
-    console.log('Game initialized');
+    for (const id of Object.keys(behaviorLibrary.locations)) {
+      const card = document.querySelector(`.location-card[data-id="${id}"]`);
+      this.els.locationCards[id] = {
+        npcs: card.querySelector('.loc-npcs'),
+        items: card.querySelector('.loc-items'),
+      };
+    }
   }
 
-  bindEvents() {
-    // Pause/Play button
-    this.elements.pauseBtn.addEventListener('click', () => {
-      const isPaused = TimeSystem.togglePause();
-      this.elements.pauseBtn.textContent = isPaused ? '▶' : '⏸';
-    });
-
-    // Speed button
-    this.elements.speedBtn.addEventListener('click', () => {
-      const newSpeed = TimeSystem.cycleSpeed();
-      this.elements.speedBtn.textContent = `${newSpeed}x`;
-    });
-
-    // Language button
-    this.elements.langBtn.addEventListener('click', () => {
-      GameState.toggleLanguage();
-      this.elements.langBtn.textContent = GameState.get('language') === 'zh' ? 'EN' : '中';
-    });
-
-    // Restart button
-    this.elements.restartBtn.addEventListener('click', () => {
-      this.restart();
-    });
-  }
-
-  subscribeToStateChanges() {
-    GameState.subscribe((path, value, state) => {
-      if (path === 'time.hour' || path === 'time.day') {
-        this.updateTimeDisplay();
-      } else if (path === 'faith' || path.startsWith('faith')) {
-        this.updateFaithDisplay();
-      } else if (path === 'divinePower' || path.startsWith('divinePower')) {
-        this.updatePowerDisplay();
-      } else if (path === 'loading') {
-        this.updateLoadingOverlay(value.isLoading, value.message);
-      } else if (path === 'gameOver') {
-        this.showGameOver(value.victory);
-      } else if (path === 'language') {
-        this.updateLanguage();
+  _bindEvents() {
+    this.els.pauseBtn.addEventListener('click', () => {
+      const paused = GameState.togglePause();
+      this.els.pauseBtn.textContent = paused ? '▶' : '⏸';
+      if (!paused) {
+        GameState.clearViewing();
+        this._startTimer();
+      } else {
+        this._stopTimer();
       }
     });
+
+    this.els.speedBtn.addEventListener('click', () => {
+      const speed = GameState.cycleSpeed();
+      this.els.speedBtn.textContent = `${speed}x`;
+      if (!GameState.get('time.isPaused')) {
+        this._stopTimer();
+        this._startTimer();
+      }
+    });
+
+    this.els.timelineNodes.addEventListener('click', (e) => {
+      const node = e.target.closest('.tl-node');
+      if (!node || node.classList.contains('never')) return;
+
+      const hour = parseInt(node.dataset.hour, 10);
+      const currentHour = GameState.get('time.hour');
+
+      if (hour === currentHour && !GameState.get('time.isPaused')) {
+        GameState.clearViewing();
+      } else {
+        const snap = GameState.getSnapshot(hour);
+        if (snap) {
+          GameState.setViewingHour(hour);
+        }
+      }
+      this._updateTimelineLabel(hour);
+    });
   }
 
-  async generateDailyScript() {
-    if (!GeminiClient.isAvailable()) {
-      // Use skeleton schedule
-      const skeleton = ScheduleSystem.generateSkeletonSchedule();
-      ScheduleSystem.setDailyScript(skeleton);
+  _startTimer() {
+    this._stopTimer();
+    const speed = GameState.get('time.speed');
+    this.tickTimer = setInterval(() => this._tick(), TIME.MS_PER_HOUR / speed);
+  }
+
+  _stopTimer() {
+    if (this.tickTimer) {
+      clearInterval(this.tickTimer);
+      this.tickTimer = null;
+    }
+  }
+
+  _tick() {
+    const { hour, day } = GameState.advanceHour();
+    const { results } = BehaviorSystem.tick();
+
+    for (const r of results) {
+      if (r.skill === 'sleep' || r.skill === 'rest') continue;
+      const npc = GameState.getNpc(r.npc);
+      GameState.addLog({
+        hour: `${String(hour).padStart(2, '0')}:00`,
+        day,
+        npcName: npc.nameCn,
+        text: r.detail,
+      });
+    }
+
+    this._updateTimeline();
+    this.render();
+  }
+
+  _updateTimeline() {
+    const currentHour = GameState.get('time.hour');
+    const dayStartHour = GameState.getDayStartHour();
+    const viewingHour = GameState.state.viewingHour;
+
+    let html = '';
+    for (let h = 0; h < 24; h++) {
+      let cls = '';
+      if (h < dayStartHour) {
+        cls = 'never';
+      } else if (h > currentHour) {
+        cls = 'pending';
+      } else {
+        const snap = GameState.getSnapshot(h);
+        if (snap && snap.dialogues && snap.dialogues.length > 0) {
+          cls = 'has-dialogue';
+        } else if (snap) {
+          cls = 'simulated';
+        } else {
+          cls = 'simulated';
+        }
+      }
+      if (h === currentHour) cls += ' current';
+      if (h === viewingHour) cls += ' viewing';
+
+      html += `<div class="tl-node ${cls}" data-hour="${h}"><div class="tl-dot"></div><span class="tl-hour">${h}</span></div>`;
+    }
+    this.els.timelineNodes.innerHTML = html;
+
+    this._updateTimelineLabel(viewingHour ?? currentHour);
+  }
+
+  _updateTimelineLabel(hour) {
+    this.els.timelineLabel.textContent = `${String(hour).padStart(2, '0')}:00`;
+    const isViewing = GameState.state.viewingHour !== null;
+    this.els.timelineLabel.className = isViewing ? 'viewing' : '';
+  }
+
+  render() {
+    const { time } = GameState.state;
+    const phase = GameState.getPhase();
+    const viewingHour = GameState.state.viewingHour;
+    const isViewing = viewingHour !== null;
+    const snapshot = isViewing ? GameState.getSnapshot(viewingHour) : null;
+
+    this.els.day.textContent = `第 ${time.day} 天`;
+    this.els.hour.textContent = `${String(time.hour).padStart(2, '0')}:00`;
+    this.els.phase.textContent = phase.nameCn;
+
+    const items = BehaviorSystem.getItemSystem();
+    const npcSource = snapshot ? snapshot.npcs : GameState.state.npcs;
+
+    for (const [locId, els] of Object.entries(this.els.locationCards)) {
+      const npcsHere = Object.values(npcSource).filter(n => n.location === locId);
+
+      if (npcsHere.length === 0) {
+        els.npcs.innerHTML = '<span class="npc-skill" style="opacity:0.3">— 无人 —</span>';
+      } else {
+        els.npcs.innerHTML = npcsHere.map(npc => `
+          <div class="npc-row">
+            <span class="npc-name">${npc.nameCn}</span>
+            <span class="npc-skill">${npc.thought || npc.currentSkill || '待命'}</span>
+            <div class="npc-bars">
+              <div class="bar bar-hunger" title="饱食 ${Math.round(npc.hunger)}">
+                <div class="bar-fill" style="width:${npc.hunger}%"></div>
+              </div>
+              <div class="bar bar-energy" title="体力 ${Math.round(npc.energy)}">
+                <div class="bar-fill" style="width:${npc.energy}%"></div>
+              </div>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      if (!isViewing) {
+        const inv = items.getInventory(locId);
+        const itemTexts = [];
+        for (const [itemId, val] of Object.entries(inv)) {
+          const def = items._registry.get(itemId);
+          const name = def?.nameCn || itemId;
+          if (Array.isArray(val)) {
+            if (val.length > 0) itemTexts.push(`${name}×${val.length}`);
+          } else if (val > 0) {
+            itemTexts.push(`${name}×${val}`);
+          }
+        }
+        els.items.textContent = itemTexts.length > 0 ? itemTexts.join('  ') : '— 无物资 —';
+      }
+    }
+
+    this._renderDialogues(snapshot);
+    this._renderLog(snapshot);
+  }
+
+  _renderDialogues(snapshot) {
+    let source;
+    if (snapshot) {
+      source = snapshot.dialogues || [];
+    } else {
+      source = GameState.state.latestDialogues || [];
+    }
+
+    if (source.length === 0) {
+      this.els.dialogueContent.innerHTML = '';
       return;
     }
 
-    GameState.setLoading(true, GameState.t('generatingScript'));
-
-    try {
-      const gameState = ScheduleSystem.getCurrentStateForLLM();
-      const prompt = buildDailyScriptPrompt(gameState);
-      const response = await GeminiClient.generateJSON(prompt);
-      const script = parseDailyScript(response);
-      ScheduleSystem.setDailyScript(script);
-    } catch (error) {
-      console.error('Failed to generate daily script:', error);
-      // Fall back to skeleton
-      const skeleton = ScheduleSystem.generateSkeletonSchedule();
-      ScheduleSystem.setDailyScript(skeleton);
+    let html = '';
+    for (const group of source) {
+      html += `<div class="dialogue-group">`;
+      html += `<span class="dialogue-loc-tag">${group.locName}</span>`;
+      for (const line of group.lines) {
+        html += `<div class="dialogue-line"><span class="dlg-speaker">${line.speaker}:</span><span class="dlg-text">${line.text}</span></div>`;
+      }
+      html += `</div>`;
     }
-
-    GameState.setLoading(false);
+    this.els.dialogueContent.innerHTML = html;
   }
 
-  onHourChange(hour, day) {
-    ScheduleSystem.applyScheduleForHour(hour);
-    this.updateTimeDisplay();
-  }
-
-  async onDayChange(day) {
-    // Generate new script for the new day
-    await this.generateDailyScript();
-  }
-
-  onOracleProcessed(oracle, reactions, usedLLM) {
-    console.log('Oracle processed:', oracle.type, 'LLM:', usedLLM, reactions);
-    // Update LLM status indicator
-    MessageLog.setLLMStatus(usedLLM);
-    // Display NPC reactions in message log
-    MessageLog.addReactions(oracle, reactions);
-  }
-
-  updateUI() {
-    this.updateTimeDisplay();
-    this.updateFaithDisplay();
-    this.updatePowerDisplay();
-    this.updateLanguage();
-  }
-
-  updateTimeDisplay() {
-    this.elements.dayDisplay.textContent = TimeSystem.getFormattedDay();
-    this.elements.hourDisplay.textContent = TimeSystem.getFormattedTime();
-  }
-
-  updateFaithDisplay() {
-    const faith = GameState.get('faith');
-    const percentage = Math.max(0, Math.min(100, faith.global));
-    this.elements.faithBar.style.width = `${percentage}%`;
-    this.elements.faithValue.textContent = `${faith.global}/${faith.target}`;
-  }
-
-  updatePowerDisplay() {
-    const power = GameState.get('divinePower');
-    this.elements.powerValue.textContent = `${power.current}/${power.max}`;
-  }
-
-  updateLoadingOverlay(isLoading, message) {
-    if (isLoading) {
-      this.elements.loadingOverlay.classList.remove('hidden');
-      this.elements.loadingText.textContent = message || GameState.t('loading');
+  _renderLog(snapshot) {
+    if (snapshot) {
+      const events = snapshot.events || [];
+      const logHtml = events.map(e =>
+        `<div class="log-entry"><span class="log-npc">${e.npcName}</span> ${e.text}</div>`
+      ).join('');
+      this.els.logContent.innerHTML = logHtml || '<div class="log-entry" style="opacity:0.3">该时段无特别事件</div>';
     } else {
-      this.elements.loadingOverlay.classList.add('hidden');
-    }
-  }
-
-  updateLanguage() {
-    // Update static text
-    this.elements.title.textContent = GameState.t('title');
-    this.elements.faithLabel.textContent = GameState.t('faith');
-    this.elements.powerLabel.textContent = GameState.t('power');
-    this.elements.oracleTitle.textContent = GameState.t('oracle');
-
-    // Update time display
-    this.updateTimeDisplay();
-
-    // Update oracle input placeholder
-    const oracleInput = document.getElementById('oracle-input');
-    if (oracleInput) {
-      oracleInput.placeholder = GameState.t('oraclePlaceholder');
-    }
-
-    // Update send button
-    const sendBtn = document.getElementById('oracle-send');
-    if (sendBtn) {
-      sendBtn.textContent = GameState.t('send');
-    }
-
-    // Update target select first option
-    const targetSelect = document.getElementById('oracle-target');
-    if (targetSelect && targetSelect.options[0]) {
-      targetSelect.options[0].textContent = GameState.t('broadcast');
-    }
-
-    // Update restart button
-    this.elements.restartBtn.textContent = GameState.t('restart');
-
-    // Update NPC thoughts header
-    const thoughtsHeader = document.querySelector('#npc-thoughts h3');
-    if (thoughtsHeader) {
-      thoughtsHeader.textContent = GameState.t('thoughts');
-    }
-
-    // Update message log title
-    MessageLog.updateLanguage();
-  }
-
-  showGameOver(victory) {
-    this.elements.gameOverModal.classList.remove('hidden');
-    this.elements.modalTitle.textContent = victory ? GameState.t('victory') : GameState.t('defeat');
-    this.elements.modalMessage.textContent = victory
-      ? GameState.t('victoryMessage')
-      : GameState.t('defeatMessage');
-  }
-
-  restart() {
-    // Reset game state
-    GameState.reset();
-
-    // Hide modal
-    this.elements.gameOverModal.classList.add('hidden');
-
-    // Reset UI
-    this.elements.pauseBtn.textContent = '▶';
-    this.elements.speedBtn.textContent = '1x';
-
-    // Re-initialize
-    this.init();
-  }
-
-  startRenderLoop() {
-    const loop = () => {
-      Renderer.render();
-      this.animationId = requestAnimationFrame(loop);
-    };
-    loop();
-  }
-
-  stopRenderLoop() {
-    if (this.animationId) {
-      cancelAnimationFrame(this.animationId);
-      this.animationId = null;
+      const logHtml = GameState.state.log.slice(0, UI.DISPLAY_LOG_LINES).map(e =>
+        `<div class="log-entry"><span class="log-time">[${e.hour}]</span><span class="log-npc">${e.npcName}</span> ${e.text}</div>`
+      ).join('');
+      this.els.logContent.innerHTML = logHtml;
     }
   }
 }
 
-// Start the game when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   const game = new Game();
-  game.init().catch(console.error);
+  game.init();
 });

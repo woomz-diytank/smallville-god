@@ -1,0 +1,361 @@
+import behaviorLibrary from '../data/behaviorLibrary.json';
+import { ItemSystem } from './ItemSystem.js';
+import { getItemRegistry } from '../data/ItemRegistry.js';
+import GameState from '../GameState.js';
+import GeminiClient from '../llm/GeminiClient.js';
+import { buildGroupPrompt } from '../llm/prompts.js';
+import { parseGroupResponse } from '../llm/scriptParser.js';
+import {
+  TIME, NEEDS, ENV_TEMPERATURE, ENERGY_COST, RECOVERY, THRESHOLD,
+  GATHER, STARTING_ITEMS, LLM, STAT_BOUNDS,
+} from '../config.js';
+
+const allPhysicalSkills = [
+  ...behaviorLibrary.skills.PHYSICAL.extraction,
+  ...behaviorLibrary.skills.PHYSICAL.crafting,
+  ...behaviorLibrary.skills.PHYSICAL.utility,
+];
+
+const skillMap = new Map(allPhysicalSkills.map(s => [s.id, s]));
+
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+class BehaviorSystemManager {
+  constructor() {
+    this.items = null;
+    this.registry = null;
+    this.llmAvailable = false;
+    this.llmBusy = false;
+  }
+
+  init() {
+    console.log('[BehaviorSystem] init start');
+    const npcIds = Object.keys(behaviorLibrary.npcs);
+    const locationIds = Object.keys(behaviorLibrary.locations);
+    this.items = new ItemSystem(npcIds, locationIds);
+    this.registry = getItemRegistry();
+    this.llmAvailable = GeminiClient.init();
+    console.log('[BehaviorSystem] LLM available:', this.llmAvailable);
+    this._setupInitialItems();
+    console.log('[BehaviorSystem] init done');
+  }
+
+  _setupInitialItems() {
+    const it = this.items;
+    for (const { owner, item } of STARTING_ITEMS.npc) {
+      it.add(owner, item);
+    }
+    for (const { owner, item, qty } of STARTING_ITEMS.location) {
+      it.add(owner, item, qty);
+    }
+  }
+
+  /**
+   * Main tick: apply needs, then decide behavior (LLM or rules).
+   * Returns { results, dialogues }. LLM calls happen async in the background;
+   * the tick always returns immediately with rule-based fallback,
+   * and LLM results (including dialogues) override on arrival.
+   */
+  tick() {
+    const npcs = GameState.getAllNpcs();
+    const phase = GameState.getPhase();
+    const hour = GameState.get('time.hour');
+    const day = GameState.get('time.day');
+    const results = [];
+    this._pendingDialogues = [];
+
+    const sleeping = hour >= TIME.NIGHT_START || hour < TIME.NIGHT_END;
+
+    for (const npc of npcs) {
+      this._applyNeeds(npc, phase, sleeping);
+    }
+
+    if (sleeping) {
+      for (const npc of npcs) {
+        this._doSleep(npc);
+        results.push({ npc: npc.id, skill: 'sleep', detail: '正在睡觉' });
+      }
+      GameState._notify();
+      return { results, dialogues: [] };
+    }
+
+    for (const npc of npcs) {
+      const decision = this._decide(npc);
+      this._execute(npc, decision);
+      results.push(decision);
+    }
+
+    const ruleEvents = results
+      .filter(r => r.skill !== 'rest' && r.skill !== 'sleep')
+      .map(r => {
+        const npc = GameState.getNpc(r.npc);
+        return { npcName: npc?.nameCn || r.npc, text: r.detail };
+      });
+    GameState.saveSnapshot(hour, ruleEvents, []);
+
+    if (this.llmAvailable && !this.llmBusy) {
+      this._llmTick(npcs, hour, day, phase);
+    }
+
+    GameState._notify();
+    return { results, dialogues: [] };
+  }
+
+  async _llmTick(npcs, hour, day, phase) {
+    this.llmBusy = true;
+    console.log(`[BehaviorSystem] LLM tick: day=${day} hour=${hour}, ${npcs.length} NPCs`);
+
+    try {
+      const groups = this._groupByLocation(npcs);
+      const promises = groups.map(({ locationId, members }) =>
+        this._callLLMForGroup(members, locationId, hour, day, phase)
+      );
+
+      const groupResults = await Promise.all(promises);
+      const allDialogues = [];
+      const events = [];
+
+      for (const { actions, talks, locationId } of groupResults) {
+        for (const [npcId, decision] of actions) {
+          const npc = GameState.getNpc(npcId);
+          if (!npc) continue;
+
+          npc.location = decision.location;
+          npc.currentSkill = decision.skill;
+          npc.thought = decision.brief;
+          this._applySkillItems(npc, decision.skill, decision.location);
+
+          events.push({ npcName: npc.nameCn, text: decision.brief });
+        }
+
+        if (talks.length > 0) {
+          const locDef = behaviorLibrary.locations[locationId];
+          allDialogues.push({
+            locationId,
+            locName: locDef?.nameCn || locationId,
+            lines: talks,
+          });
+        }
+      }
+
+      GameState.saveSnapshot(hour, events, allDialogues);
+      GameState._notify();
+    } catch (err) {
+      console.warn('[BehaviorSystem] LLM tick failed, rules already applied:', err.message);
+    } finally {
+      this.llmBusy = false;
+    }
+  }
+
+  _groupByLocation(npcs) {
+    const map = new Map();
+    for (const npc of npcs) {
+      if (!map.has(npc.location)) map.set(npc.location, []);
+      map.get(npc.location).push(npc);
+    }
+    return [...map.entries()].map(([locationId, members]) => ({ locationId, members }));
+  }
+
+  async _callLLMForGroup(members, locationId, hour, day, phase) {
+    const prompt = buildGroupPrompt({
+      npcs: members,
+      locationId,
+      itemSystem: this.items,
+      hour,
+      day,
+      phase,
+    });
+
+    try {
+      const json = await GeminiClient.generateJSON(prompt, {
+        temperature: LLM.GROUP_TICK_TEMPERATURE,
+        maxTokens: LLM.GROUP_TICK_MAX_TOKENS,
+      });
+      const { actions, talks } = parseGroupResponse(json, members);
+      return { actions, talks, locationId };
+    } catch (err) {
+      console.warn(`[BehaviorSystem] LLM call failed for ${locationId}:`, err.message);
+      return { actions: new Map(), talks: [], locationId };
+    }
+  }
+
+  _applySkillItems(npc, skillId, locationId) {
+    const skillDef = skillMap.get(skillId);
+    if (!skillDef) return;
+
+    const check = this.items.canExecuteSkill(npc.id, skillId, locationId);
+    if (check.valid) {
+      this.items.applySkillResult(npc.id, skillId, locationId);
+    }
+
+    if (skillId === 'eat') {
+      npc.hunger = Math.min(STAT_BOUNDS.MAX, npc.hunger + RECOVERY.LLM_EAT_HUNGER);
+    } else if (skillId === 'rest' || skillId === 'sleep') {
+      npc.energy = Math.min(STAT_BOUNDS.MAX, npc.energy + RECOVERY.LLM_REST_ENERGY);
+    }
+  }
+
+  _applyNeeds(npc, phase, isSleeping) {
+    const pressure = phase.survivalPressure || 'low';
+    const coldMult = ENV_TEMPERATURE[pressure] ?? ENV_TEMPERATURE.DEFAULT;
+
+    const hungerDrain = isSleeping ? NEEDS.HUNGER_DRAIN_SLEEP : NEEDS.HUNGER_DRAIN_PER_HOUR;
+    npc.hunger = Math.max(STAT_BOUNDS.MIN, npc.hunger - hungerDrain * coldMult);
+
+    if (!isSleeping) {
+      let energyDrain = NEEDS.ENERGY_DRAIN_PER_HOUR * coldMult;
+      if (npc.hunger < THRESHOLD.HUNGER_ENERGY_PENALTY) {
+        energyDrain += NEEDS.ENERGY_DRAIN_LOW_HUNGER;
+      }
+      npc.energy = Math.max(STAT_BOUNDS.MIN, npc.energy - energyDrain);
+    }
+  }
+
+  _decide(npc) {
+    if (npc.energy < THRESHOLD.ENERGY_LOW) {
+      return this._restDecision(npc);
+    }
+
+    if (npc.hunger < THRESHOLD.HUNGER_LOW) {
+      const eatResult = this._tryEat(npc);
+      if (eatResult) return eatResult;
+      const cookResult = this._tryCook(npc);
+      if (cookResult) return cookResult;
+      const forageResult = this._trySkill(npc, 'forage');
+      if (forageResult) return forageResult;
+    }
+
+    return this._tryProductive(npc);
+  }
+
+  _restDecision(npc) {
+    const restLocs = ['chapel', 'ruins'];
+    if (!restLocs.includes(npc.location)) {
+      npc.location = 'chapel';
+    }
+    return { npc: npc.id, skill: 'rest', detail: '体力不支，歇息中' };
+  }
+
+  _tryEat(npc) {
+    const foods = ['cooked_meat', 'berries', 'raw_meat'];
+    for (const food of foods) {
+      if (this.items.has(npc.id, food) || this.items.has(npc.location, food) || this.items.has('storehouse', food)) {
+        const source = this.items.has(npc.location, food) ? npc.location :
+                       this.items.has(npc.id, food) ? npc.id : 'storehouse';
+        if (source === 'storehouse' && npc.location !== 'storehouse') {
+          npc.location = 'storehouse';
+        }
+        this.items.remove(source, food, GATHER.EAT_CONSUME);
+        const restore = RECOVERY.EAT_RESTORE[food] || 15;
+        npc.hunger = Math.min(STAT_BOUNDS.MAX, npc.hunger + restore);
+        return { npc: npc.id, skill: 'eat', detail: `吃了${this.registry.get(food).nameCn}` };
+      }
+    }
+    return null;
+  }
+
+  _tryCook(npc) {
+    if (!npc.skills.PHYSICAL.includes('cook')) return null;
+    const cookLocations = ['chapel', 'forge'];
+    const cookLoc = cookLocations.find(loc =>
+      (this.items.has(npc.id, 'cooking_pot') || this.items.has(loc, 'cooking_pot')) &&
+      (this.items.has(loc, 'raw_meat') || this.items.has('storehouse', 'raw_meat')) &&
+      (this.items.has(loc, 'timber') || this.items.has('storehouse', 'timber'))
+    );
+    if (!cookLoc) return null;
+
+    npc.location = cookLoc;
+    if (!this.items.has(cookLoc, 'raw_meat') && this.items.has('storehouse', 'raw_meat')) {
+      this.items.transfer('storehouse', cookLoc, 'raw_meat');
+    }
+    if (!this.items.has(cookLoc, 'timber') && this.items.has('storehouse', 'timber')) {
+      this.items.transfer('storehouse', cookLoc, 'timber');
+    }
+    this.items.applySkillResult(npc.id, 'cook', cookLoc);
+    npc.energy -= ENERGY_COST.PHYSICAL;
+    return { npc: npc.id, skill: 'cook', detail: '烹饪了一份熟肉' };
+  }
+
+  _trySkill(npc, skillId) {
+    if (!npc.skills.PHYSICAL.includes(skillId)) return null;
+    const skillDef = skillMap.get(skillId);
+    if (!skillDef) return null;
+
+    for (const loc of skillDef.locations) {
+      const check = this.items.canExecuteSkill(npc.id, skillId, loc);
+      if (check.valid) {
+        npc.location = loc;
+        this.items.applySkillResult(npc.id, skillId, loc);
+        npc.energy -= ENERGY_COST.PHYSICAL;
+        return { npc: npc.id, skill: skillId, detail: skillDef.nameCn };
+      }
+    }
+    return null;
+  }
+
+  _tryProductive(npc) {
+    const physicalSkills = npc.skills.PHYSICAL.filter(
+      s => !['tend_fire', 'haul'].includes(s)
+    );
+
+    const shuffled = [...physicalSkills].sort(() => Math.random() - 0.5);
+
+    for (const skillId of shuffled) {
+      const result = this._trySkill(npc, skillId);
+      if (result) return result;
+    }
+
+    const utilResult = this._trySkill(npc, 'tend_fire') || this._trySkill(npc, 'haul');
+    if (utilResult) return utilResult;
+
+    const socialSkills = npc.skills.SOCIAL || [];
+    if (socialSkills.length > 0) {
+      const social = pick(socialSkills);
+      const socialDef = behaviorLibrary.skills.SOCIAL.find(s => s.id === social);
+      if (socialDef) {
+        const loc = socialDef.locations.find(l => true) || npc.location;
+        npc.location = loc;
+        npc.energy -= ENERGY_COST.SOCIAL;
+        return { npc: npc.id, skill: social, detail: socialDef.nameCn };
+      }
+    }
+
+    const mentalSkills = npc.skills.MENTAL || [];
+    if (mentalSkills.length > 0) {
+      const mental = pick(mentalSkills);
+      const mentalDef = behaviorLibrary.skills.MENTAL.find(s => s.id === mental);
+      if (mentalDef) {
+        const loc = mentalDef.locations.find(l => true) || npc.location;
+        npc.location = loc;
+        npc.energy -= ENERGY_COST.MENTAL;
+        return { npc: npc.id, skill: mental, detail: mentalDef.nameCn };
+      }
+    }
+
+    return { npc: npc.id, skill: 'rest', detail: '无事可做，歇息' };
+  }
+
+  _doSleep(npc) {
+    const sleepLocs = ['chapel', 'ruins'];
+    if (!sleepLocs.includes(npc.location)) {
+      npc.location = 'chapel';
+    }
+    npc.energy = Math.min(STAT_BOUNDS.MAX, npc.energy + RECOVERY.SLEEP_ENERGY);
+    npc.currentSkill = 'sleep';
+    npc.thought = '';
+  }
+
+  _execute(npc, decision) {
+    npc.currentSkill = decision.skill;
+    npc.thought = decision.detail;
+  }
+
+  getItemSystem() {
+    return this.items;
+  }
+}
+
+export const BehaviorSystem = new BehaviorSystemManager();
+export default BehaviorSystem;

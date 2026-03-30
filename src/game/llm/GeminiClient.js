@@ -1,9 +1,10 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
+import { LLM } from '../config.js';
 
 class GeminiClientManager {
   constructor() {
     this.client = null;
-    this.model = null;
+    this.modelName = null;
   }
 
   init() {
@@ -15,10 +16,9 @@ class GeminiClientManager {
     }
 
     try {
-      this.client = new GoogleGenerativeAI(apiKey);
-      const modelName = import.meta.env.VITE_GEMINI_MODEL || 'gemini-1.5-flash';
-      this.model = this.client.getGenerativeModel({ model: modelName });
-      console.log(`Gemini model initialized: ${modelName}`);
+      this.client = new GoogleGenAI({ apiKey });
+      this.modelName = import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.0-flash';
+      console.log(`Gemini client initialized with model: ${this.modelName}`);
       return true;
     } catch (error) {
       console.error('Failed to initialize Gemini client:', error);
@@ -27,7 +27,7 @@ class GeminiClientManager {
   }
 
   isAvailable() {
-    return this.model !== null;
+    return this.client !== null;
   }
 
   async generate(prompt, options = {}) {
@@ -35,22 +35,25 @@ class GeminiClientManager {
       throw new Error('Gemini client not initialized');
     }
 
-    const generationConfig = {
-      temperature: options.temperature ?? 0.8,
-      maxOutputTokens: options.maxTokens ?? 8192,
-      topP: 0.9,
+    const config = {
+      temperature: options.temperature ?? LLM.DEFAULT_TEMPERATURE,
+      maxOutputTokens: options.maxTokens ?? LLM.DEFAULT_MAX_TOKENS,
+      topP: LLM.DEFAULT_TOP_P,
     };
+    if (options.responseMimeType) {
+      config.responseMimeType = options.responseMimeType;
+    }
 
     console.log('[GeminiClient] Calling API with prompt length:', prompt.length);
 
     try {
-      const result = await this.model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig
+      const response = await this.client.models.generateContent({
+        model: this.modelName,
+        contents: prompt,
+        config
       });
 
-      const response = result.response;
-      const text = response.text();
+      const text = response.text;
 
       console.log('[GeminiClient] API call successful, response length:', text.length);
 
@@ -63,13 +66,13 @@ class GeminiClientManager {
   }
 
   async generateJSON(prompt, options = {}) {
-    const jsonPrompt = `${prompt}
-
-【重要】你的回复必须是纯 JSON 格式。不要包含任何 markdown 格式、代码块或解释文字。直接以 { 或 [ 开头。`;
-
     console.log('[GeminiClient] Generating JSON response...');
 
-    const text = await this.generate(jsonPrompt, options);
+    const text = await this.generate(prompt, {
+      ...options,
+      maxTokens: options.maxTokens ?? LLM.JSON_DEFAULT_MAX_TOKENS,
+      responseMimeType: 'application/json',
+    });
 
     console.log('[GeminiClient] Raw response length:', text.length);
     console.log('[GeminiClient] Raw response preview:', text.substring(0, 800));
@@ -84,13 +87,19 @@ class GeminiClientManager {
       console.log('[GeminiClient] Extracted from code block');
     }
 
-    // Try to find the outermost JSON object
+    // Try to find the outermost JSON structure (object or array)
     const firstBrace = jsonText.indexOf('{');
     const lastBrace = jsonText.lastIndexOf('}');
+    const firstBracket = jsonText.indexOf('[');
+    const lastBracket = jsonText.lastIndexOf(']');
 
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    const hasBrace = firstBrace !== -1 && lastBrace > firstBrace;
+    const hasBracket = firstBracket !== -1 && lastBracket > firstBracket;
+
+    if (hasBracket && (!hasBrace || firstBracket < firstBrace)) {
+      jsonText = jsonText.substring(firstBracket, lastBracket + 1);
+    } else if (hasBrace) {
       jsonText = jsonText.substring(firstBrace, lastBrace + 1);
-      console.log('[GeminiClient] Extracted JSON object from position', firstBrace, 'to', lastBrace);
     }
 
     try {
