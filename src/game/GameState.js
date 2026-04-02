@@ -1,5 +1,5 @@
 import behaviorLibrary from './data/behaviorLibrary.json';
-import { TIME, INITIAL_STATS, UI } from './config.js';
+import { TIME, INITIAL_STATS, UI, BUILDING } from './config.js';
 
 function getPhase(week) {
   const phases = behaviorLibrary.winterPhases;
@@ -22,11 +22,17 @@ function buildInitialNpcs() {
       personality: def.personality,
       background: def.background,
       learningPotential: def.learningPotential || [],
-      location: 'square',
+      location: 'camp',
       currentSkill: null,
       thought: '',
       hunger: INITIAL_STATS.HUNGER,
       energy: INITIAL_STATS.ENERGY,
+      memory: [],
+      commitments: [],
+      shortTermGoal: '',
+      longTermGoal: '',
+      daySummary: '',
+      pastSummaries: [],
     };
   }
   return npcs;
@@ -48,7 +54,8 @@ class GameStateManager {
         speed: 1,
       },
       npcs: buildInitialNpcs(),
-      locations: behaviorLibrary.locations,
+      locations: JSON.parse(JSON.stringify(behaviorLibrary.locations)),
+      ruinsRepairProgress: 0,
       log: [],
       dayTimeline: {},
       viewingHour: null,
@@ -136,6 +143,8 @@ class GameStateManager {
         thought: npc.thought,
         hunger: npc.hunger,
         energy: npc.energy,
+        shortTermGoal: npc.shortTermGoal,
+        longTermGoal: npc.longTermGoal,
       };
     }
     this.state.dayTimeline[hour] = { hour, npcs: npcClone, events, dialogues };
@@ -178,6 +187,25 @@ class GameStateManager {
     this.state.time.speed = speeds[(i + 1) % speeds.length];
     this._notify();
     return this.state.time.speed;
+  }
+
+  advanceRuinsRepair() {
+    if (this.state.ruinsRepairProgress >= BUILDING.RUINS_REPAIR_COST) return false;
+    this.state.ruinsRepairProgress++;
+    if (this.state.ruinsRepairProgress >= BUILDING.RUINS_REPAIR_COST) {
+      this.state.locations.ruins.nameCn = '小屋';
+    }
+    return true;
+  }
+
+  isRuinsRepaired() {
+    return this.state.ruinsRepairProgress >= BUILDING.RUINS_REPAIR_COST;
+  }
+
+  getRuinsDisplayName() {
+    if (this.isRuinsRepaired()) return '小屋';
+    const p = this.state.ruinsRepairProgress;
+    return p > 0 ? `废屋 (${p}/${BUILDING.RUINS_REPAIR_COST})` : '废屋';
   }
 }
 

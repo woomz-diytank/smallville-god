@@ -1,196 +1,48 @@
 {
   "meta": {
-    "version": "0.2.0",
-    "description": "中世纪荒废小镇冬季生存模拟 - 行为库与物品系统",
-    "setting": "8名移民在荒废小镇的基础上合作生活，抵御冬天寒潮",
+    "version": "0.3.0",
+    "description": "中世纪荒废小镇冬季生存模拟 - 最小验证版（3 NPC / 4 地点）",
+    "setting": "3名移民在荒废小镇合作求生，抵御即将到来的严冬",
     "framework": {
       "needLayer": "SURVIVE / PRODUCE / BOND / SEEK — 驱动 NPC 做出行为选择的四种基本需求",
       "behaviorLayer": "PHYSICAL / SOCIAL / MENTAL / RESTORE — 行为与世界交互的四种客观方式",
-      "abilityLayer": "每个 NPC 拥有行为库的有限子集，基本技能广泛分布，专精技能少数人掌握",
+      "abilityLayer": "每个 NPC 拥有行为库的有限子集，必须合作才能生存",
       "environmentLayer": "地点决定哪些技能可用，工具决定能否执行",
-      "itemSourceRule": "每件物品的来源对应行为库中的具体行为：采集(从自然获取) / 制作(从原料加工) / 交易(从外界换取)"
+      "itemSourceRule": "采集(从自然获取) / 制作(从原料加工) / 交易(从外界换取)"
     }
   },
 
   "needTypes": {
-    "SURVIVE": {
-      "name": "存续",
-      "description": "维持自身作为生物体的持续存在。吃饭、睡觉、避险、治疗、寻找庇护。",
-      "axis": "自身 × 物质"
-    },
-    "PRODUCE": {
-      "name": "创造",
-      "description": "对物质世界施加作用，产出有形成果。建造、制作、采集、烹饪。",
-      "axis": "外部 × 物质"
-    },
-    "BOND": {
-      "name": "联结",
-      "description": "与他人建立、维持或改变关系。交谈、合作、竞争、领导、对抗。",
-      "axis": "外部 × 精神"
-    },
-    "SEEK": {
-      "name": "求知",
-      "description": "理解世界和自身，构建内在的意义体系。观察、探索、学习、反思、祈祷。",
-      "axis": "自身 × 精神"
-    }
+    "SURVIVE": { "name": "存续", "description": "维持自身作为生物体的持续存在。吃饭、睡觉、避险。", "axis": "自身 × 物质" },
+    "PRODUCE": { "name": "创造", "description": "对物质世界施加作用。建造、制作、采集、烹饪。", "axis": "外部 × 物质" },
+    "BOND":    { "name": "联结", "description": "与他人建立关系。交谈、合作、领导。", "axis": "外部 × 精神" },
+    "SEEK":    { "name": "求知", "description": "理解世界和自身。观察、探索、反思。", "axis": "自身 × 精神" }
   },
 
   "behaviorTypes": {
-    "PHYSICAL": {
-      "name": "劳作",
-      "description": "身体作用于物质世界的行为"
-    },
-    "SOCIAL": {
-      "name": "交际",
-      "description": "与他人的双向交互"
-    },
-    "MENTAL": {
-      "name": "思索",
-      "description": "内在的信息处理与精神活动"
-    },
-    "RESTORE": {
-      "name": "休养",
-      "description": "自我恢复与生理维持"
-    }
+    "PHYSICAL": { "name": "劳作", "description": "身体作用于物质世界的行为" },
+    "SOCIAL":   { "name": "交际", "description": "与他人的双向交互" },
+    "MENTAL":   { "name": "思索", "description": "内在的信息处理与精神活动" },
+    "RESTORE":  { "name": "休养", "description": "自我恢复与生理维持" }
   },
 
   "items": {
     "consumable": [
-      {
-        "id": "berries",
-        "nameCn": "浆果",
-        "category": "food",
-        "source": ["forage"],
-        "properties": { "nourishment": 3 }
-      },
-      {
-        "id": "raw_meat",
-        "nameCn": "生肉",
-        "category": "food",
-        "source": ["hunt", "trap"],
-        "properties": { "nourishment": 5, "spoilDays": 2 }
-      },
-      {
-        "id": "cooked_meat",
-        "nameCn": "熟肉",
-        "category": "food",
-        "source": ["cook"],
-        "properties": { "nourishment": 8 }
-      },
-      {
-        "id": "timber",
-        "nameCn": "木材",
-        "category": "material",
-        "source": ["chop_wood"],
-        "properties": { "fuelValue": 4 },
-        "note": "既是建材也是燃料，烧火时直接消耗"
-      },
-      {
-        "id": "stone",
-        "nameCn": "石块",
-        "category": "material",
-        "source": ["gather_stone"]
-      },
-      {
-        "id": "hide",
-        "nameCn": "兽皮",
-        "category": "material",
-        "source": ["hunt", "trap"]
-      },
-      {
-        "id": "thatch",
-        "nameCn": "茅草",
-        "category": "material",
-        "source": ["forage"]
-      },
-      {
-        "id": "scrap_metal",
-        "nameCn": "废铁",
-        "category": "material",
-        "source": ["scavenge", "trade"]
-      }
+      { "id": "berries",     "nameCn": "浆果", "category": "food",     "source": ["forage"],    "properties": { "nourishment": 3 } },
+      { "id": "raw_meat",    "nameCn": "生肉", "category": "food",     "source": ["hunt"],      "properties": { "nourishment": 5, "spoilDays": 2 } },
+      { "id": "cooked_meat", "nameCn": "熟肉", "category": "food",     "source": ["cook"],      "properties": { "nourishment": 8 } },
+      { "id": "timber",      "nameCn": "木材", "category": "material", "source": ["chop_wood"], "properties": { "fuelValue": 4 }, "note": "建材兼燃料" },
+      { "id": "stone",       "nameCn": "石块", "category": "material", "source": ["gather_stone"] },
+      { "id": "hide",        "nameCn": "兽皮", "category": "material", "source": ["hunt"] },
+      { "id": "thatch",      "nameCn": "茅草", "category": "material", "source": ["forage"] }
     ],
     "durable": [
-      {
-        "id": "axe",
-        "nameCn": "斧头",
-        "category": "tool",
-        "source": ["smith", "trade", "scavenge"],
-        "properties": { "maxDurability": 10 }
-      },
-      {
-        "id": "hammer",
-        "nameCn": "铁锤",
-        "category": "tool",
-        "source": ["smith", "trade", "scavenge"],
-        "properties": { "maxDurability": 12 }
-      },
-      {
-        "id": "hunting_knife",
-        "nameCn": "猎刀",
-        "category": "tool",
-        "source": ["smith", "trade", "scavenge"],
-        "properties": { "maxDurability": 8 }
-      },
-      {
-        "id": "needle_thread",
-        "nameCn": "针线",
-        "category": "tool",
-        "source": ["trade"],
-        "properties": { "maxDurability": 6 },
-        "note": "无法本地生产，依赖交易获取；初始可从废墟搜寻到"
-      },
-      {
-        "id": "cooking_pot",
-        "nameCn": "铁锅",
-        "category": "tool",
-        "source": ["smith", "trade", "scavenge"],
-        "properties": { "maxDurability": 15 }
-      },
-      {
-        "id": "saw",
-        "nameCn": "锯子",
-        "category": "tool",
-        "source": ["smith", "trade", "scavenge"],
-        "properties": { "maxDurability": 10 }
-      },
-      {
-        "id": "bow",
-        "nameCn": "弓",
-        "category": "weapon",
-        "source": ["smith", "trade"],
-        "properties": { "maxDurability": 8 }
-      },
-      {
-        "id": "snare",
-        "nameCn": "绳套陷阱",
-        "category": "weapon",
-        "source": ["trade"],
-        "properties": { "maxDurability": 3 },
-        "note": "消耗快，需要定期通过交易补充"
-      },
-      {
-        "id": "fur_coat",
-        "nameCn": "皮毛外套",
-        "category": "clothing",
-        "source": ["craft_clothing"],
-        "properties": { "warmth": 8, "maxDurability": 20 }
-      },
-      {
-        "id": "leather_boots",
-        "nameCn": "皮靴",
-        "category": "clothing",
-        "source": ["craft_clothing"],
-        "properties": { "warmth": 5, "maxDurability": 15 }
-      },
-      {
-        "id": "wool_blanket",
-        "nameCn": "毛毯",
-        "category": "clothing",
-        "source": ["trade"],
-        "properties": { "warmth": 6, "maxDurability": 25 },
-        "note": "无法本地生产，依赖交易获取"
-      }
+      { "id": "axe",          "nameCn": "斧头",     "category": "tool",     "source": ["trade"], "properties": { "maxDurability": 10 } },
+      { "id": "hammer",       "nameCn": "铁锤",     "category": "tool",     "source": ["trade"], "properties": { "maxDurability": 12 } },
+      { "id": "bow",          "nameCn": "弓",       "category": "weapon",   "source": ["trade"], "properties": { "maxDurability": 8 } },
+      { "id": "needle_thread","nameCn": "针线",     "category": "tool",     "source": ["trade"], "properties": { "maxDurability": 6 } },
+      { "id": "cooking_pot",  "nameCn": "铁锅",     "category": "tool",     "source": ["trade"], "properties": { "maxDurability": 15 } },
+      { "id": "fur_coat",     "nameCn": "皮毛外套", "category": "clothing", "source": ["craft_clothing"], "properties": { "warmth": 8, "maxDurability": 20 } }
     ]
   },
 
@@ -216,15 +68,6 @@
           "produces": ["raw_meat", "hide"]
         },
         {
-          "id": "trap",
-          "nameCn": "设陷阱",
-          "description": "布置绳套陷阱，被动捕获小型猎物",
-          "locations": ["forest"],
-          "requires": ["snare"],
-          "consumes": [],
-          "produces": ["raw_meat", "hide"]
-        },
-        {
           "id": "chop_wood",
           "nameCn": "伐木",
           "description": "用斧头砍伐树木，获取木材",
@@ -241,15 +84,6 @@
           "requires": ["hammer"],
           "consumes": [],
           "produces": ["stone"]
-        },
-        {
-          "id": "scavenge",
-          "nameCn": "搜寻",
-          "description": "在废墟中翻找可用的金属材料和物品",
-          "locations": ["ruins"],
-          "requires": [],
-          "consumes": [],
-          "produces": ["scrap_metal"]
         }
       ],
       "crafting": [
@@ -257,7 +91,7 @@
           "id": "cook",
           "nameCn": "烹饪",
           "description": "用铁锅将生肉烹饪成熟肉，需要木材作为燃料",
-          "locations": ["chapel", "forge"],
+          "locations": ["camp"],
           "requires": ["cooking_pot"],
           "consumes": ["raw_meat", "timber"],
           "produces": ["cooked_meat"]
@@ -265,31 +99,21 @@
         {
           "id": "craft_clothing",
           "nameCn": "缝制衣物",
-          "description": "用针线将兽皮缝制成外套或皮靴",
-          "locations": ["chapel", "ruins"],
+          "description": "用针线将3张兽皮缝制成皮毛外套",
+          "locations": ["camp", "ruins"],
           "requires": ["needle_thread"],
-          "consumes": ["hide"],
-          "produces": ["fur_coat", "leather_boots"]
-        },
-        {
-          "id": "smith",
-          "nameCn": "锻造",
-          "description": "在铁匠铺中用废铁锻造或修复工具与武器",
-          "locations": ["forge"],
-          "requires": ["hammer"],
-          "consumes": ["scrap_metal", "timber"],
-          "produces": ["axe", "hammer", "hunting_knife", "cooking_pot", "saw", "bow"],
-          "note": "也可用于修复已损坏的耐久物品"
+          "consumes": ["hide:3"],
+          "produces": ["fur_coat"]
         },
         {
           "id": "build",
           "nameCn": "修建",
-          "description": "用木材、石块和茅草修缮废弃的房屋",
+          "description": "用木材修缮废屋，共需20木材完成修复",
           "locations": ["ruins"],
-          "requires": ["hammer", "saw"],
-          "consumes": ["timber", "stone", "thatch"],
+          "requires": ["hammer"],
+          "consumes": ["timber"],
           "produces": [],
-          "note": "不产出物品，而是推进房屋修缮进度"
+          "note": "不产出物品，推进房屋修缮进度（每次消耗1木材）"
         }
       ],
       "utility": [
@@ -297,7 +121,7 @@
           "id": "tend_fire",
           "nameCn": "看火",
           "description": "维护炉火，确保不熄灭，消耗木材作为燃料",
-          "locations": ["chapel", "forge", "square"],
+          "locations": ["camp"],
           "requires": [],
           "consumes": ["timber"],
           "produces": []
@@ -306,7 +130,7 @@
           "id": "haul",
           "nameCn": "搬运",
           "description": "在不同地点之间搬运物资",
-          "locations": ["square", "chapel", "forge", "ruins", "forest", "storehouse"],
+          "locations": ["camp", "ruins", "forest", "storehouse"],
           "requires": [],
           "consumes": [],
           "produces": []
@@ -315,187 +139,41 @@
     },
 
     "SOCIAL": [
-      {
-        "id": "trade",
-        "nameCn": "交易",
-        "description": "与到访的货郎以物易物",
-        "locations": ["square"]
-      },
-      {
-        "id": "coordinate",
-        "nameCn": "协调分工",
-        "description": "组织众人分配任务、协调行动",
-        "locations": ["square", "chapel"]
-      },
-      {
-        "id": "teach",
-        "nameCn": "传授",
-        "description": "将自己掌握的知识或技能教给他人",
-        "locations": ["square", "chapel", "forge", "ruins", "forest", "storehouse"]
-      },
-      {
-        "id": "comfort",
-        "nameCn": "安慰",
-        "description": "给予情感支持，安慰沮丧或恐惧的人",
-        "locations": ["square", "chapel", "forge", "ruins", "forest", "storehouse"]
-      },
-      {
-        "id": "negotiate",
-        "nameCn": "协商",
-        "description": "调解分歧，在不同立场之间寻求共识",
-        "locations": ["square", "chapel"]
-      },
-      {
-        "id": "rally",
-        "nameCn": "动员",
-        "description": "在危机时刻号召众人团结行动",
-        "locations": ["square", "chapel"]
-      },
-      {
-        "id": "care",
-        "nameCn": "照护",
-        "description": "照料伤病者，喂食、保暖、看护",
-        "locations": ["chapel", "forge"]
-      },
-      {
-        "id": "gossip",
-        "nameCn": "闲谈",
-        "description": "分享消息、打听情况、交换见闻",
-        "locations": ["square", "chapel", "forge", "storehouse"]
-      },
-      {
-        "id": "persuade",
-        "nameCn": "说服",
-        "description": "说服他人接受某个观点或改变行为",
-        "locations": ["square", "chapel", "forge", "ruins", "forest", "storehouse"]
-      }
+      { "id": "trade",      "nameCn": "交易",   "description": "与到访的货郎以物易物",               "locations": ["camp"] },
+      { "id": "coordinate", "nameCn": "协调分工", "description": "组织众人分配任务、协调行动",         "locations": ["camp"] },
+      { "id": "persuade",   "nameCn": "说服",   "description": "说服他人接受某个观点或改变行为",       "locations": ["camp", "ruins", "forest", "storehouse"] },
+      { "id": "comfort",    "nameCn": "安慰",   "description": "给予情感支持，安慰沮丧或恐惧的人",     "locations": ["camp", "ruins", "forest", "storehouse"] },
+      { "id": "negotiate",  "nameCn": "协商",   "description": "调解分歧，在不同立场之间寻求共识",     "locations": ["camp"] },
+      { "id": "gossip",     "nameCn": "闲谈",   "description": "分享消息、打听情况、交换见闻",         "locations": ["camp", "storehouse"] }
     ],
 
     "MENTAL": [
-      {
-        "id": "plan",
-        "nameCn": "筹划",
-        "description": "制定资源分配策略、行动计划",
-        "locations": ["storehouse", "chapel"]
-      },
-      {
-        "id": "observe",
-        "nameCn": "观察",
-        "description": "监测天气变化、巡视周边环境",
-        "locations": ["forest", "square"]
-      },
-      {
-        "id": "diagnose",
-        "nameCn": "诊断",
-        "description": "判断病情、评估伤势或物品损坏程度",
-        "locations": ["square", "chapel", "forge", "ruins", "forest", "storehouse"]
-      },
-      {
-        "id": "pray",
-        "nameCn": "祈祷",
-        "description": "向神灵祈祷，寻求内心的平静或力量",
-        "locations": ["chapel"]
-      },
-      {
-        "id": "study",
-        "nameCn": "研读",
-        "description": "阅读、研究、总结经验知识",
-        "locations": ["chapel"]
-      },
-      {
-        "id": "reflect",
-        "nameCn": "内省",
-        "description": "回顾和消化经历，整理内心",
-        "locations": ["square", "chapel", "forge", "ruins", "forest", "storehouse"]
-      },
-      {
-        "id": "forecast",
-        "nameCn": "测候",
-        "description": "通过观察云层、风向、动物行为判断天气走势",
-        "locations": ["forest", "square"]
-      }
+      { "id": "plan",    "nameCn": "筹划", "description": "制定资源分配策略、行动计划",       "locations": ["storehouse", "camp"] },
+      { "id": "observe", "nameCn": "观察", "description": "监测天气变化、巡视周边环境",       "locations": ["forest", "camp"] }
     ],
 
     "RESTORE": [
-      {
-        "id": "sleep",
-        "nameCn": "睡眠",
-        "description": "完整的休息和睡眠",
-        "locations": ["chapel", "ruins"]
-      },
-      {
-        "id": "eat",
-        "nameCn": "进食",
-        "description": "食用食物补充体力",
-        "locations": ["chapel", "forge", "storehouse"],
-        "consumes": ["cooked_meat|raw_meat|berries"]
-      },
-      {
-        "id": "drink",
-        "nameCn": "饮水",
-        "description": "从水井或水源处饮水",
-        "locations": ["square", "chapel"]
-      },
-      {
-        "id": "warm",
-        "nameCn": "取暖",
-        "description": "靠近火源取暖，裹紧衣物",
-        "locations": ["chapel", "forge"]
-      },
-      {
-        "id": "rest",
-        "nameCn": "歇息",
-        "description": "不睡觉的轻度休息，恢复疲劳",
-        "locations": ["square", "chapel", "forge", "ruins", "forest", "storehouse"]
-      }
-    ]
-  },
-
-  "universalSkills": {
-    "description": "所有 NPC 天生拥有的学习类技能，不需要习得",
-    "skills": [
-      {
-        "id": "practice",
-        "nameCn": "练习",
-        "behaviorType": "PHYSICAL",
-        "description": "通过反复尝试来练习一项尚未掌握的体力技能",
-        "locations": ["square", "chapel", "forge", "ruins", "forest", "storehouse"]
-      },
-      {
-        "id": "learn_from",
-        "nameCn": "请教",
-        "behaviorType": "SOCIAL",
-        "description": "向掌握某项技能的人请教、跟随学习",
-        "locations": ["square", "chapel", "forge", "ruins", "forest", "storehouse"]
-      }
+      { "id": "sleep", "nameCn": "睡眠", "description": "完整的休息和睡眠",     "locations": ["camp", "ruins"] },
+      { "id": "eat",   "nameCn": "进食", "description": "食用食物补充体力",       "locations": ["camp", "storehouse"], "consumes": ["cooked_meat|raw_meat|berries"] },
+      { "id": "rest",  "nameCn": "歇息", "description": "不睡觉的轻度休息",       "locations": ["camp", "ruins", "forest", "storehouse"] }
     ]
   },
 
   "locations": {
-    "square": {
-      "nameCn": "广场",
-      "description": "小镇中心，有一口古老的水井。集会、交易和信息交换的场所。",
-      "winterNote": "水井在隆冬可能结冰，需要破冰取水。"
-    },
-    "chapel": {
-      "nameCn": "废弃教堂",
-      "description": "石砌教堂，小镇上最坚固的建筑。修缮后可作为公共起居和避难场所。",
-      "winterNote": "石墙保温性最好，隆冬时是全镇的核心避难所。"
-    },
-    "forge": {
-      "nameCn": "旧铁匠铺",
-      "description": "废弃的铁匠工坊，炉子尚可修复使用。锻造和烹饪的场所。",
-      "winterNote": "锻造炉提供持续热源，也是修理工具的唯一场所。"
-    },
-    "ruins": {
-      "nameCn": "废屋区",
-      "description": "一片荒废的民居，墙壁坍塌、屋顶破损。修缮后可变为宜居住所。",
-      "winterNote": "修缮进度决定可用住所数量，未修缮的房屋无法抵御寒风。"
+    "camp": {
+      "nameCn": "营地",
+      "description": "小镇中心的空地，搭着简易棚子和火堆。众人睡觉、做饭、集会的地方。",
+      "winterNote": "火堆是营地的核心，没有木材就没有温暖。"
     },
     "forest": {
       "nameCn": "森林",
-      "description": "小镇外的森林，狩猎、采集和伐木的主要区域。",
+      "description": "小镇外的密林，狩猎、采集和伐木的主要区域。",
       "winterNote": "深冬时极度危险——暴风雪、狼群、迷路风险。"
+    },
+    "ruins": {
+      "nameCn": "废屋",
+      "description": "一片荒废的民居，墙壁坍塌、屋顶破损。修缮后可变为御寒住所。",
+      "winterNote": "修缮进度决定住所能否抵御寒风，未修好的房屋形同虚设。"
     },
     "storehouse": {
       "nameCn": "储藏室",
@@ -505,211 +183,77 @@
   },
 
   "npcs": {
-    "aldric": {
-      "name": "Aldric",
-      "nameCn": "阿尔德里克",
-      "age": 45,
+    "agnes": {
+      "name": "Agnes",
+      "nameCn": "阿格尼丝",
+      "age": 35,
       "needs": {
-        "SURVIVE": { "weight": 0.5, "style": "务实而自足，靠手艺养活自己" },
-        "PRODUCE": { "weight": 0.9, "style": "沉迷于锻造和建造，工作就是他的语言" },
-        "BOND":    { "weight": 0.3, "style": "不善言辞，通过帮人修东西来表达善意" },
-        "SEEK":    { "weight": 0.2, "style": "对抽象的事物没什么兴趣" }
+        "SURVIVE": { "weight": 0.5, "style": "精明务实，懂得用人脉和资源保护所有人" },
+        "PRODUCE": { "weight": 0.4, "style": "烹饪是她的贡献方式，把食材变成暖胃的饭菜" },
+        "BOND":    { "weight": 0.9, "style": "天生的领袖，本能地把人聚在一起" },
+        "SEEK":    { "weight": 0.3, "style": "对实际事务敏锐，不太关心抽象的东西" }
       },
       "personality": {
-        "traits": ["沉默寡言", "可靠", "固执", "手艺精湛"],
-        "values": ["实用", "自立", "手艺"],
-        "fears": ["无事可做", "工具损毁无法修复"]
+        "traits": ["热情", "果断", "有远见", "善于说服"],
+        "values": ["合作", "生存", "团结"],
+        "fears": ["群体分裂", "有人冻死饿死"]
       },
       "skills": {
-        "PHYSICAL": ["smith", "build", "chop_wood", "haul", "gather_stone", "scavenge", "tend_fire", "forage"],
-        "SOCIAL":   ["trade", "teach"],
+        "PHYSICAL": ["cook", "forage", "tend_fire"],
+        "SOCIAL":   ["coordinate", "persuade", "comfort", "negotiate"],
         "MENTAL":   ["plan", "observe"],
-        "RESTORE":  ["sleep", "eat", "drink", "warm", "rest"]
+        "RESTORE":  ["sleep", "eat", "rest"]
       },
-      "background": "Aldric 从少年时就跟着一个铁匠做学徒，掌握了锻造的全部技术。移民途中妻子病逝，他变得更加沉默。他不爱说话，但什么东西坏了都能修好。所有人都需要他的手艺——斧头钝了、铁锅漏了、弓弦断了，都得找他。"
-    },
-
-    "margit": {
-      "name": "Margit",
-      "nameCn": "玛格丽特",
-      "age": 38,
-      "needs": {
-        "SURVIVE": { "weight": 0.4, "style": "懂得用知识照顾自己" },
-        "PRODUCE": { "weight": 0.5, "style": "调配药物、准备食材" },
-        "BOND":    { "weight": 0.5, "style": "关心他人但保持距离" },
-        "SEEK":    { "weight": 0.8, "style": "对自然和生命充满好奇" }
-      },
-      "personality": {
-        "traits": ["聪慧", "内敛", "细心", "知识渊博"],
-        "values": ["知识", "治愈", "独立"],
-        "fears": ["无知导致的死亡", "被人误解"]
-      },
-      "skills": {
-        "PHYSICAL": ["cook", "tend_fire", "forage"],
-        "SOCIAL":   ["teach", "comfort", "care"],
-        "MENTAL":   ["diagnose", "observe", "study", "reflect"],
-        "RESTORE":  ["sleep", "eat", "drink", "warm", "rest"]
-      },
-      "background": "Margit 从母亲那里学到了辨认植物和照护病人的知识。她能通过观察判断一个人的身体状况，知道哪些野果能吃、哪些有毒。体力活不是她的长项，但在有人受伤生病时，她是众人的依靠。"
+      "background": "Agnes 曾经营一家热闹的客栈，擅长把不同的人拢到一张桌子旁。她是三人中唯一明白只有合作才能活下去的人。她不能砍树、不能打猎、不能修房子，但她能让不愿合作的人坐下来谈，能把猎人带回的生肉变成暖胃的熟食。没有她，另外两个沉默的男人可能各干各的直到冻死。"
     },
 
     "roderic": {
       "name": "Roderic",
       "nameCn": "罗德里克",
-      "age": 30,
+      "age": 28,
       "needs": {
         "SURVIVE": { "weight": 0.8, "style": "森林教会了他——生存永远是第一位的" },
-        "PRODUCE": { "weight": 0.6, "style": "以猎获为荣，追求完美的陷阱和精准的射击" },
+        "PRODUCE": { "weight": 0.6, "style": "以猎获为荣，追求完美的射击和精湛的皮革工艺" },
         "BOND":    { "weight": 0.2, "style": "独来独往，信任自己胜过信任他人" },
         "SEEK":    { "weight": 0.3, "style": "对森林和动物有本能的理解" }
       },
       "personality": {
-        "traits": ["独立", "警觉", "勇敢", "沉默"],
-        "values": ["自由", "自给自足", "森林"],
+        "traits": ["独立", "沉默", "警觉", "技艺精湛"],
+        "values": ["自由", "自给自足", "手艺"],
         "fears": ["被困在四面墙里", "失去行动能力"]
       },
       "skills": {
-        "PHYSICAL": ["hunt", "trap", "chop_wood", "haul", "scavenge", "tend_fire", "forage"],
+        "PHYSICAL": ["hunt", "craft_clothing", "forage"],
         "SOCIAL":   ["trade"],
-        "MENTAL":   ["observe", "forecast"],
-        "RESTORE":  ["sleep", "eat", "drink", "warm", "rest"]
-      },
-      "background": "Roderic 从小跟着父亲在林子里长大，十几岁就能独自追踪猎物。他是队伍里唯一精通弓术和陷阱的人。他不太信任人群，但他清楚——深冬时一个人在林子里是活不下去的。"
-    },
-
-    "agnes": {
-      "name": "Agnes",
-      "nameCn": "阿格尼丝",
-      "age": 44,
-      "needs": {
-        "SURVIVE": { "weight": 0.5, "style": "精明的生存者，懂得用人脉和物资保护自己" },
-        "PRODUCE": { "weight": 0.6, "style": "烹饪和经营——她的生产就是服务" },
-        "BOND":    { "weight": 0.9, "style": "天生的社交者，本能地把人聚在一起" },
-        "SEEK":    { "weight": 0.3, "style": "对实际事务敏锐，对抽象思考没太大兴趣" }
-      },
-      "personality": {
-        "traits": ["热情", "精明", "健谈", "母性"],
-        "values": ["社区", "互助", "热闹"],
-        "fears": ["孤独", "群体分裂"]
-      },
-      "skills": {
-        "PHYSICAL": ["cook", "tend_fire", "forage"],
-        "SOCIAL":   ["trade", "coordinate", "comfort", "negotiate", "rally", "gossip"],
-        "MENTAL":   ["plan"],
-        "RESTORE":  ["sleep", "eat", "drink", "warm", "rest"]
-      },
-      "background": "Agnes 曾经营一家热闹的客栈，擅长把不同的人拢到一张桌子旁。她记得每个人的喜好，知道怎么在争吵前化解矛盾。她最怕的不是冬天的寒冷，而是人心的涣散。"
-    },
-
-    "clement": {
-      "name": "Clement",
-      "nameCn": "克莱门特",
-      "age": 58,
-      "needs": {
-        "SURVIVE": { "weight": 0.2, "style": "对物质需求很低，但身体已经大不如前" },
-        "PRODUCE": { "weight": 0.3, "style": "能做的体力活很少，贡献主要是精神层面" },
-        "BOND":    { "weight": 0.6, "style": "关爱每一个人" },
-        "SEEK":    { "weight": 0.9, "style": "一生都在追问信仰与人性的意义" }
-      },
-      "personality": {
-        "traits": ["博学", "温和", "理想主义", "体弱"],
-        "values": ["信仰", "知识", "希望"],
-        "fears": ["在人们最需要他时倒下", "希望的火焰熄灭"]
-      },
-      "skills": {
-        "PHYSICAL": ["cook", "tend_fire", "forage"],
-        "SOCIAL":   ["teach", "comfort", "care", "coordinate", "persuade"],
-        "MENTAL":   ["pray", "study", "reflect", "plan", "observe"],
-        "RESTORE":  ["sleep", "eat", "drink", "warm", "rest"]
-      },
-      "background": "Clement 是一个行脚修士，半生都在游历和读书。他博学多闻但体弱多病，干不了重活。然而在最黑暗的时刻，他的话语能让人重新燃起希望。他也是队伍里唯一识字的人。"
-    },
-
-    "erik": {
-      "name": "Erik",
-      "nameCn": "埃里克",
-      "age": 19,
-      "needs": {
-        "SURVIVE": { "weight": 0.7, "style": "孤儿的本能——先确保今天有饭吃" },
-        "PRODUCE": { "weight": 0.7, "style": "渴望证明自己有用，拼命干活" },
-        "BOND":    { "weight": 0.5, "style": "渴望被接纳，但不知道怎么开口" },
-        "SEEK":    { "weight": 0.2, "style": "觉得读书没用，但对新鲜事物暗暗好奇" }
-      },
-      "personality": {
-        "traits": ["勤快", "鲁莽", "朴实", "渴望认可"],
-        "values": ["勤劳", "被需要", "力量"],
-        "fears": ["被抛弃", "被认为没用"]
-      },
-      "skills": {
-        "PHYSICAL": ["chop_wood", "haul", "gather_stone", "build", "scavenge", "tend_fire", "forage"],
-        "SOCIAL":   ["gossip"],
         "MENTAL":   ["observe"],
-        "RESTORE":  ["sleep", "eat", "drink", "warm", "rest"]
+        "RESTORE":  ["sleep", "eat", "rest"]
       },
-      "background": "Erik 是个孤儿，从小靠给人打零工长大。他没有专精技能，但有使不完的力气。他是队伍里最年轻的人，也是学习潜力最大的人——通过 practice 和 learn_from 可以习得 hunt、trap、smith、cook、craft_clothing 等专精技能。",
-      "learningPotential": ["hunt", "trap", "cook", "smith", "craft_clothing", "build"]
-    },
-
-    "ingrid": {
-      "name": "Ingrid",
-      "nameCn": "英格丽德",
-      "age": 28,
-      "needs": {
-        "SURVIVE": { "weight": 0.5, "style": "细致而节省，不浪费任何材料" },
-        "PRODUCE": { "weight": 0.7, "style": "对手工制作有热情，享受从无到有的过程" },
-        "BOND":    { "weight": 0.6, "style": "温和友善，善于倾听" },
-        "SEEK":    { "weight": 0.4, "style": "对美和工艺有追求" }
-      },
-      "personality": {
-        "traits": ["心灵手巧", "温和", "细致", "有创造力"],
-        "values": ["美", "工艺", "耐心"],
-        "fears": ["粗暴和浪费", "失去双手的灵活"]
-      },
-      "skills": {
-        "PHYSICAL": ["craft_clothing", "cook", "haul", "tend_fire", "forage"],
-        "SOCIAL":   ["trade", "gossip", "comfort"],
-        "MENTAL":   ["observe", "reflect"],
-        "RESTORE":  ["sleep", "eat", "drink", "warm", "rest"]
-      },
-      "background": "Ingrid 从母亲那里学会了缝纫，能把一块兽皮变成御寒的外套。她是队伍里唯一会缝制衣物的人。手很巧，学东西也快，除了缝纫还能帮忙做饭和采集。"
+      "background": "Roderic 从小跟着父亲在林子里长大，十几岁就能独自追踪猎物。除了打猎，他还从母亲那里学会了鞣制兽皮、缝制皮衣的手艺。他更喜欢独处，觉得和别人打交道是浪费时间。但他心里清楚——深冬时一个人是活不下去的，只是不愿意承认。"
     },
 
     "oskar": {
       "name": "Oskar",
       "nameCn": "奥斯卡",
-      "age": 50,
+      "age": 45,
       "needs": {
         "SURVIVE": { "weight": 0.5, "style": "踏实稳重，凡事做好准备" },
         "PRODUCE": { "weight": 0.8, "style": "建造就是他的使命，看到废墟就想修好" },
-        "BOND":    { "weight": 0.4, "style": "不多话但乐于带人一起干活" },
-        "SEEK":    { "weight": 0.3, "style": "经验丰富，对实际问题有独到见解" }
+        "BOND":    { "weight": 0.3, "style": "不多话，但一起干活时偶尔冒出几句" },
+        "SEEK":    { "weight": 0.2, "style": "经验丰富，对实际问题有直觉" }
       },
       "personality": {
-        "traits": ["稳重", "耐心", "一丝不苟", "经验丰富"],
-        "values": ["质量", "安全", "规划"],
-        "fears": ["偷工减料导致坍塌", "体力不支"]
+        "traits": ["固执", "沉默", "力气大", "一丝不苟"],
+        "values": ["质量", "自立", "踏实"],
+        "fears": ["偷工减料导致房子塌了", "体力不支"]
       },
       "skills": {
-        "PHYSICAL": ["build", "chop_wood", "haul", "gather_stone", "scavenge", "tend_fire", "forage"],
-        "SOCIAL":   ["teach"],
-        "MENTAL":   ["plan", "observe"],
-        "RESTORE":  ["sleep", "eat", "drink", "warm", "rest"]
+        "PHYSICAL": ["chop_wood", "build", "gather_stone", "haul", "tend_fire"],
+        "SOCIAL":   ["gossip"],
+        "MENTAL":   ["plan"],
+        "RESTORE":  ["sleep", "eat", "rest"]
       },
-      "background": "Oskar 做了三十年木匠和泥瓦匠，盖过的房子比他说过的话都多。他看一眼废墟就知道哪堵墙还能用、哪根梁需要换。在修建房屋方面，他是最高效的人。沉默寡言，但带着年轻人干活时会不自觉地传授经验。"
+      "background": "Oskar 做了三十年木匠和泥瓦匠，盖过的房子比他说过的话都多。他看一眼废墟就知道哪堵墙还能用、哪根梁需要换。他只想安安静静地干活——砍树、修房子、搬石头。他不懂打猎，也不会做饭，独自一人时就靠啃浆果度日。让他开口说话比让他扛一根圆木还难。"
     }
-  },
-
-  "tradeEvents": {
-    "description": "货郎定期到访小镇，与居民以物易物",
-    "frequency": "每 2-3 周一次",
-    "peddlerOffers": [
-      { "item": "needle_thread", "basePrice": 3, "priceUnit": "hide" },
-      { "item": "wool_blanket", "basePrice": 5, "priceUnit": "hide" },
-      { "item": "snare", "basePrice": 2, "priceUnit": "hide" },
-      { "item": "scrap_metal", "basePrice": 1, "priceUnit": "hide" }
-    ],
-    "peddlerWants": ["hide", "berries", "cooked_meat", "fur_coat"],
-    "note": "价格仅为参考，LLM 可根据叙事需要调整。货郎到访是一个游戏事件，由时间系统触发。"
   },
 
   "winterPhases": {
@@ -718,48 +262,28 @@
       "weeks": [1, 2, 3],
       "description": "天气尚温和，资源充足。聪明的人会开始备冬。",
       "survivalPressure": "low",
-      "effects": {
-        "forestDanger": "low",
-        "fuelConsumption": "low",
-        "illnessRisk": "low",
-        "moralePressure": "none"
-      }
+      "effects": { "forestDanger": "low", "fuelConsumption": "low", "illnessRisk": "low", "moralePressure": "none" }
     },
     "deepAutumn": {
       "nameCn": "深秋",
       "weeks": [4, 5, 6],
       "description": "日短夜长，气温骤降。备冬变得紧迫。",
       "survivalPressure": "moderate",
-      "effects": {
-        "forestDanger": "low",
-        "fuelConsumption": "moderate",
-        "illnessRisk": "low",
-        "moralePressure": "low"
-      }
+      "effects": { "forestDanger": "low", "fuelConsumption": "moderate", "illnessRisk": "low", "moralePressure": "low" }
     },
     "earlyWinter": {
       "nameCn": "初冬",
       "weeks": [7, 8, 9],
       "description": "大雪封路，独自生存变得困难。",
       "survivalPressure": "high",
-      "effects": {
-        "forestDanger": "moderate",
-        "fuelConsumption": "high",
-        "illnessRisk": "moderate",
-        "moralePressure": "moderate"
-      }
+      "effects": { "forestDanger": "moderate", "fuelConsumption": "high", "illnessRisk": "moderate", "moralePressure": "moderate" }
     },
     "deepWinter": {
       "nameCn": "隆冬",
       "weeks": [10, 11, 12],
-      "description": "暴风雪、食物见底、疾病风险。不协作就会有人撑不过去。",
+      "description": "暴风雪、食物见底。不协作就会有人撑不过去。",
       "survivalPressure": "extreme",
-      "effects": {
-        "forestDanger": "extreme",
-        "fuelConsumption": "extreme",
-        "illnessRisk": "high",
-        "moralePressure": "high"
-      }
+      "effects": { "forestDanger": "extreme", "fuelConsumption": "extreme", "illnessRisk": "high", "moralePressure": "high" }
     }
   }
 }

@@ -23,23 +23,26 @@ for (const [id, def] of Object.entries(behaviorLibrary.npcs)) {
 /**
  * Parse and validate LLM output for a group tick.
  *
- * Expected input: { actions: [...], talks?: [...] } or legacy array [...]
- * Returns: { actions: Map<npcId, { location, skill, brief }>, talks: Array }
+ * Expected input: { actions: [...], talks?: [...], commitments?: [...] }
+ * Returns: { actions: Map<npcId, { location, skill, brief }>, talks: Array, commitments: Array }
  */
 export function parseGroupResponse(llmResult, npcGroup) {
   const actions = new Map();
   const talks = [];
+  const commitments = [];
 
-  let actionList, talkList;
+  let actionList, talkList, commitList;
   if (Array.isArray(llmResult)) {
     actionList = llmResult;
     talkList = [];
+    commitList = [];
   } else if (llmResult && typeof llmResult === 'object') {
     actionList = Array.isArray(llmResult.actions) ? llmResult.actions : [];
     talkList = Array.isArray(llmResult.talks) ? llmResult.talks : [];
+    commitList = Array.isArray(llmResult.commitments) ? llmResult.commitments : [];
   } else {
     console.warn('[Parser] LLM result unexpected type:', typeof llmResult);
-    return { actions, talks };
+    return { actions, talks, commitments };
   }
 
   const groupNpcIds = new Set(npcGroup.map(n => n.id));
@@ -86,5 +89,23 @@ export function parseGroupResponse(llmResult, npcGroup) {
     talks.push({ speaker: speakerName, speakerId: who, text: say });
   }
 
-  return { actions, talks };
+  for (const c of commitList) {
+    if (!c || typeof c !== 'object') continue;
+    const npcId = c.npc;
+    if (!npcId || !NPC_IDS.has(npcId)) continue;
+    const day = typeof c.day === 'number' ? c.day : null;
+    if (!day) continue;
+    const text = typeof c.text === 'string' ? c.text.slice(0, 30) : '';
+    if (!text) continue;
+    const withId = (c.with && NPC_IDS.has(c.with)) ? c.with : null;
+    commitments.push({
+      npc: npcId,
+      day,
+      hour: typeof c.hour === 'number' ? c.hour : null,
+      text,
+      with: withId,
+    });
+  }
+
+  return { actions, talks, commitments };
 }

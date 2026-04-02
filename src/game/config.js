@@ -23,7 +23,7 @@ export const INITIAL_STATS = {
 
 // ─── 每小时需求消耗 ──────────────────────────────────
 export const NEEDS = {
-  HUNGER_DRAIN_PER_HOUR: 6,        // 每小时饱食度下降
+  HUNGER_DRAIN_PER_HOUR: 5,        // 每小时饱食度下降
   HUNGER_DRAIN_SLEEP: 2,           // 睡眠时饱食度下降（比清醒时慢）
   ENERGY_DRAIN_PER_HOUR: 2,        // 每小时体力自然下降
   ENERGY_DRAIN_LOW_HUNGER: 3,      // 饥饿时额外体力下降（叠加）
@@ -49,17 +49,15 @@ export const ENERGY_COST = {
 // ─── 恢复量 ─────────────────────────────────────────
 export const RECOVERY = {
   SLEEP_ENERGY: 15,        // 每小时睡眠恢复体力
+  REST_ENERGY: 5,          // 每小时歇息恢复体力
 
-  // 进食恢复饱食度（规则路径 - 按食物类型）
+  // 进食恢复饱食度（按食物类型，吃到饱为止）
   EAT_RESTORE: {
     cooked_meat: 40,
     raw_meat: 20,
     berries: 15,
   },
-
-  // LLM 路径下的固定恢复
-  LLM_EAT_HUNGER: 30,     // eat 技能加饱食度
-  LLM_REST_ENERGY: 10,    // rest/sleep 技能加体力
+  EAT_PRIORITY: ['cooked_meat', 'berries', 'raw_meat'],
 };
 
 // ─── 决策阈值 ───────────────────────────────────────
@@ -79,22 +77,18 @@ export const GATHER = {
 // ─── 开局物资 ────────────────────────────────────────
 export const STARTING_ITEMS = {
   npc: [
-    { owner: 'aldric',  item: 'hammer' },
     { owner: 'roderic', item: 'bow' },
-    { owner: 'roderic', item: 'hunting_knife' },
-    { owner: 'erik',    item: 'axe' },
-    { owner: 'oskar',   item: 'saw' },
-    { owner: 'ingrid',  item: 'needle_thread' },
+    { owner: 'roderic', item: 'needle_thread' },
+    { owner: 'oskar',   item: 'axe' },
+    { owner: 'oskar',   item: 'hammer' },
   ],
   location: [
-    { owner: 'storehouse', item: 'cooking_pot', qty: 1 },
-    { owner: 'storehouse', item: 'berries',     qty: 12 },
-    { owner: 'storehouse', item: 'raw_meat',    qty: 6 },
-    { owner: 'storehouse', item: 'timber',      qty: 8 },
-    { owner: 'storehouse', item: 'thatch',      qty: 4 },
-    { owner: 'storehouse', item: 'scrap_metal', qty: 3 },
-    { owner: 'ruins',      item: 'stone',       qty: 5 },
-    { owner: 'forest',     item: 'snare',       qty: 1 },
+    { owner: 'camp',       item: 'cooking_pot', qty: 1 },
+    { owner: 'storehouse', item: 'berries',     qty: 8 },
+    { owner: 'storehouse', item: 'raw_meat',    qty: 4 },
+    { owner: 'storehouse', item: 'timber',      qty: 6 },
+    { owner: 'storehouse', item: 'thatch',      qty: 3 },
+    { owner: 'storehouse', item: 'stone',       qty: 3 },
   ],
 };
 
@@ -110,14 +104,27 @@ export const LLM = {
 
 // ─── 文本截断 ───────────────────────────────────────
 export const TEXT_LIMIT = {
-  BRIEF_MAX: 20,           // NPC 行为摘要最大字符
-  SAY_MAX: 50,             // 对话单句最大字符
+  BRIEF_MAX: 40,           // NPC 行为摘要最大字符
+  SAY_MAX: 80,             // 对话单句最大字符
 };
 
 // ─── UI / 日志 ──────────────────────────────────────
 export const UI = {
   MAX_LOG_ENTRIES: 100,     // 内存中保留的日志条数
   DISPLAY_LOG_LINES: 30,   // 非回放模式下显示的日志行数
+};
+
+// ─── NPC 心智 ──────────────────────────────────────
+export const MIND = {
+  MAX_MEMORY: 16,            // 当天记忆条数上限
+  MAX_COMMITMENTS: 5,        // 待履行约定上限
+  MAX_PAST_SUMMARIES: 7,     // 保留的历史日总结天数
+  CONSOLIDATION_HOUR: 22,    // 睡眠整理在哪个小时触发（仅第一次）
+};
+
+// ─── 建筑修复 ───────────────────────────────────────
+export const BUILDING = {
+  RUINS_REPAIR_COST: 20,   // 废屋修复所需总木材
 };
 
 // ─── 统一上下限 ─────────────────────────────────────

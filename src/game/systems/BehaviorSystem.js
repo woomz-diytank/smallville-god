@@ -5,10 +5,12 @@ import GameState from '../GameState.js';
 import GeminiClient from '../llm/GeminiClient.js';
 import { buildGroupPrompt } from '../llm/prompts.js';
 import { parseGroupResponse } from '../llm/scriptParser.js';
+import MindSystem from './MindSystem.js';
 import {
   TIME, NEEDS, ENV_TEMPERATURE, ENERGY_COST, RECOVERY, THRESHOLD,
-  GATHER, STARTING_ITEMS, LLM, STAT_BOUNDS,
+  GATHER, STARTING_ITEMS, LLM, STAT_BOUNDS, MIND,
 } from '../config.js';
+import SimLogger from './SimLogger.js';
 
 const allPhysicalSkills = [
   ...behaviorLibrary.skills.PHYSICAL.extraction,
@@ -39,6 +41,7 @@ class BehaviorSystemManager {
     this.llmAvailable = GeminiClient.init();
     console.log('[BehaviorSystem] LLM available:', this.llmAvailable);
     this._setupInitialItems();
+    MindSystem.init();
     console.log('[BehaviorSystem] init done');
   }
 
@@ -67,16 +70,37 @@ class BehaviorSystemManager {
     this._pendingDialogues = [];
 
     const sleeping = hour >= TIME.NIGHT_START || hour < TIME.NIGHT_END;
+    const pressure = phase.survivalPressure || 'low';
+    const coldMult = ENV_TEMPERATURE[pressure] ?? ENV_TEMPERATURE.DEFAULT;
 
     for (const npc of npcs) {
       this._applyNeeds(npc, phase, sleeping);
     }
 
+    const npcIds = Object.keys(behaviorLibrary.npcs);
+    const locationIds = Object.keys(behaviorLibrary.locations);
+    SimLogger.beginTick(
+      { day, hour, phase, ruinsRepair: GameState.state.ruinsRepairProgress, sleeping, coldMultiplier: coldMult },
+      npcs, this.items, npcIds, locationIds,
+    );
+
     if (sleeping) {
       for (const npc of npcs) {
         this._doSleep(npc);
-        results.push({ npc: npc.id, skill: 'sleep', detail: '正在睡觉' });
+        const d = { npc: npc.id, skill: 'sleep', detail: '正在睡觉' };
+        results.push(d);
+        SimLogger.logDecision(d, 'sleep');
       }
+      const tickIdx = SimLogger.endTick(npcs);
+
+      if (hour === MIND.CONSOLIDATION_HOUR && !this.llmBusy) {
+        this.llmBusy = true;
+        MindSystem.consolidateAll(day, phase, tickIdx).finally(() => {
+          this.llmBusy = false;
+          GameState._notify();
+        });
+      }
+
       GameState._notify();
       return { results, dialogues: [] };
     }
@@ -85,6 +109,13 @@ class BehaviorSystemManager {
       const decision = this._decide(npc);
       this._execute(npc, decision);
       results.push(decision);
+      SimLogger.logDecision(decision, 'rule');
+    }
+
+    for (const r of results) {
+      if (r.skill === 'rest' || r.skill === 'sleep') continue;
+      const npc = GameState.getNpc(r.npc);
+      if (npc) MindSystem.recordMemory(npc, hour, r.detail);
     }
 
     const ruleEvents = results
@@ -95,29 +126,33 @@ class BehaviorSystemManager {
       });
     GameState.saveSnapshot(hour, ruleEvents, []);
 
+    const tickIdx = SimLogger.endTick(npcs);
+
     if (this.llmAvailable && !this.llmBusy) {
-      this._llmTick(npcs, hour, day, phase);
+      this._llmTick(npcs, hour, day, phase, tickIdx);
     }
 
     GameState._notify();
     return { results, dialogues: [] };
   }
 
-  async _llmTick(npcs, hour, day, phase) {
+  async _llmTick(npcs, hour, day, phase, tickIdx) {
     this.llmBusy = true;
     console.log(`[BehaviorSystem] LLM tick: day=${day} hour=${hour}, ${npcs.length} NPCs`);
 
     try {
       const groups = this._groupByLocation(npcs);
       const promises = groups.map(({ locationId, members }) =>
-        this._callLLMForGroup(members, locationId, hour, day, phase)
+        this._callLLMForGroup(members, locationId, hour, day, phase, tickIdx)
       );
 
       const groupResults = await Promise.all(promises);
       const allDialogues = [];
       const events = [];
 
-      for (const { actions, talks, locationId } of groupResults) {
+      for (const { actions, talks, commitments, locationId } of groupResults) {
+        SimLogger.appendLLMDecisions(tickIdx, actions);
+
         for (const [npcId, decision] of actions) {
           const npc = GameState.getNpc(npcId);
           if (!npc) continue;
@@ -127,6 +162,7 @@ class BehaviorSystemManager {
           npc.thought = decision.brief;
           this._applySkillItems(npc, decision.skill, decision.location);
 
+          MindSystem.recordMemory(npc, hour, decision.brief);
           events.push({ npcName: npc.nameCn, text: decision.brief });
         }
 
@@ -137,8 +173,32 @@ class BehaviorSystemManager {
             locName: locDef?.nameCn || locationId,
             lines: talks,
           });
+          for (const t of talks) {
+            const npc = GameState.getNpc(t.speakerId);
+            if (npc) MindSystem.recordMemory(npc, hour, `对${t.speaker === npc.nameCn ? '别人' : t.speaker}说："${t.text}"`);
+          }
+        }
+
+        for (const c of commitments) {
+          MindSystem.addCommitment(c.npc, {
+            day: c.day,
+            hour: c.hour,
+            text: c.text,
+            with: c.with,
+          });
+          if (c.with) {
+            MindSystem.addCommitment(c.with, {
+              day: c.day,
+              hour: c.hour,
+              text: c.text,
+              with: c.npc,
+            });
+          }
         }
       }
+
+      SimLogger.appendDialogues(tickIdx, allDialogues);
+      SimLogger.updateAfterLLM(tickIdx, npcs);
 
       GameState.saveSnapshot(hour, events, allDialogues);
       GameState._notify();
@@ -158,7 +218,15 @@ class BehaviorSystemManager {
     return [...map.entries()].map(([locationId, members]) => ({ locationId, members }));
   }
 
-  async _callLLMForGroup(members, locationId, hour, day, phase) {
+  async _callLLMForGroup(members, locationId, hour, day, phase, tickIdx) {
+    const mindContext = new Map();
+    for (const npc of members) {
+      mindContext.set(npc.id, {
+        memoryStr: MindSystem.fmtMemory(npc),
+        commitStr: MindSystem.fmtCommitments(npc, day),
+      });
+    }
+
     const prompt = buildGroupPrompt({
       npcs: members,
       locationId,
@@ -166,6 +234,7 @@ class BehaviorSystemManager {
       hour,
       day,
       phase,
+      mindContext,
     });
 
     try {
@@ -173,27 +242,57 @@ class BehaviorSystemManager {
         temperature: LLM.GROUP_TICK_TEMPERATURE,
         maxTokens: LLM.GROUP_TICK_MAX_TOKENS,
       });
-      const { actions, talks } = parseGroupResponse(json, members);
-      return { actions, talks, locationId };
+      const rawResponse = GeminiClient.lastRawResponse;
+      const { actions, talks, commitments } = parseGroupResponse(json, members);
+
+      SimLogger.appendLLMCall(tickIdx, {
+        type: 'groupTick',
+        locationId,
+        prompt,
+        rawResponse,
+        parsed: json,
+        error: null,
+      });
+
+      return { actions, talks, commitments, locationId };
     } catch (err) {
+      SimLogger.appendLLMCall(tickIdx, {
+        type: 'groupTick',
+        locationId,
+        prompt,
+        rawResponse: GeminiClient.lastRawResponse ?? null,
+        parsed: null,
+        error: err.message,
+      });
       console.warn(`[BehaviorSystem] LLM call failed for ${locationId}:`, err.message);
-      return { actions: new Map(), talks: [], locationId };
+      return { actions: new Map(), talks: [], commitments: [], locationId };
     }
   }
 
   _applySkillItems(npc, skillId, locationId) {
+    if (skillId === 'eat') {
+      this._eatUntilFull(npc);
+      return;
+    }
+
+    if (skillId === 'rest') {
+      npc.energy = Math.min(STAT_BOUNDS.MAX, npc.energy + RECOVERY.REST_ENERGY);
+      return;
+    }
+    if (skillId === 'sleep') {
+      npc.energy = Math.min(STAT_BOUNDS.MAX, npc.energy + RECOVERY.SLEEP_ENERGY);
+      return;
+    }
+
     const skillDef = skillMap.get(skillId);
     if (!skillDef) return;
 
     const check = this.items.canExecuteSkill(npc.id, skillId, locationId);
     if (check.valid) {
       this.items.applySkillResult(npc.id, skillId, locationId);
-    }
-
-    if (skillId === 'eat') {
-      npc.hunger = Math.min(STAT_BOUNDS.MAX, npc.hunger + RECOVERY.LLM_EAT_HUNGER);
-    } else if (skillId === 'rest' || skillId === 'sleep') {
-      npc.energy = Math.min(STAT_BOUNDS.MAX, npc.energy + RECOVERY.LLM_REST_ENERGY);
+      if (skillId === 'build' && locationId === 'ruins') {
+        GameState.advanceRuinsRepair();
+      }
     }
   }
 
@@ -231,34 +330,61 @@ class BehaviorSystemManager {
   }
 
   _restDecision(npc) {
-    const restLocs = ['chapel', 'ruins'];
+    const restLocs = ['camp', 'ruins'];
     if (!restLocs.includes(npc.location)) {
-      npc.location = 'chapel';
+      npc.location = 'camp';
     }
+    npc.energy = Math.min(STAT_BOUNDS.MAX, npc.energy + RECOVERY.REST_ENERGY);
     return { npc: npc.id, skill: 'rest', detail: '体力不支，歇息中' };
   }
 
   _tryEat(npc) {
-    const foods = ['cooked_meat', 'berries', 'raw_meat'];
-    for (const food of foods) {
-      if (this.items.has(npc.id, food) || this.items.has(npc.location, food) || this.items.has('storehouse', food)) {
-        const source = this.items.has(npc.location, food) ? npc.location :
-                       this.items.has(npc.id, food) ? npc.id : 'storehouse';
-        if (source === 'storehouse' && npc.location !== 'storehouse') {
-          npc.location = 'storehouse';
+    const anyFood = RECOVERY.EAT_PRIORITY.some(f =>
+      this.items.has(npc.id, f) || this.items.has(npc.location, f) || this.items.has('storehouse', f)
+    );
+    if (!anyFood) return null;
+
+    const result = this._eatUntilFull(npc);
+    if (!result) return null;
+    return { npc: npc.id, skill: 'eat', detail: result.detail };
+  }
+
+  _eatUntilFull(npc) {
+    const eaten = [];
+    const sources = [npc.location, npc.id, 'storehouse'];
+
+    while (npc.hunger < STAT_BOUNDS.MAX) {
+      let ate = false;
+      for (const food of RECOVERY.EAT_PRIORITY) {
+        for (const src of sources) {
+          if (this.items.has(src, food)) {
+            if (src === 'storehouse' && npc.location !== 'storehouse') {
+              npc.location = 'storehouse';
+            }
+            this.items.remove(src, food, 1);
+            const restore = RECOVERY.EAT_RESTORE[food] || 15;
+            npc.hunger = Math.min(STAT_BOUNDS.MAX, npc.hunger + restore);
+            eaten.push(this.registry.get(food)?.nameCn || food);
+            ate = true;
+            break;
+          }
         }
-        this.items.remove(source, food, GATHER.EAT_CONSUME);
-        const restore = RECOVERY.EAT_RESTORE[food] || 15;
-        npc.hunger = Math.min(STAT_BOUNDS.MAX, npc.hunger + restore);
-        return { npc: npc.id, skill: 'eat', detail: `吃了${this.registry.get(food).nameCn}` };
+        if (ate) break;
       }
+      if (!ate) break;
     }
-    return null;
+
+    if (eaten.length === 0) return null;
+
+    const counts = {};
+    for (const name of eaten) counts[name] = (counts[name] || 0) + 1;
+    const detail = Object.entries(counts).map(([n, c]) => c > 1 ? `${n}×${c}` : n).join('、');
+    return { detail: `吃了${detail}` };
   }
 
   _tryCook(npc) {
     if (!npc.skills.PHYSICAL.includes('cook')) return null;
-    const cookLocations = ['chapel', 'forge'];
+    const cookLocations = ['camp'];
     const cookLoc = cookLocations.find(loc =>
       (this.items.has(npc.id, 'cooking_pot') || this.items.has(loc, 'cooking_pot')) &&
       (this.items.has(loc, 'raw_meat') || this.items.has('storehouse', 'raw_meat')) &&
@@ -280,6 +406,7 @@ class BehaviorSystemManager {
 
   _trySkill(npc, skillId) {
     if (!npc.skills.PHYSICAL.includes(skillId)) return null;
+    if (skillId === 'build' && GameState.isRuinsRepaired()) return null;
     const skillDef = skillMap.get(skillId);
     if (!skillDef) return null;
 
@@ -289,6 +416,9 @@ class BehaviorSystemManager {
         npc.location = loc;
         this.items.applySkillResult(npc.id, skillId, loc);
         npc.energy -= ENERGY_COST.PHYSICAL;
+        if (skillId === 'build' && loc === 'ruins') {
+          GameState.advanceRuinsRepair();
+        }
         return { npc: npc.id, skill: skillId, detail: skillDef.nameCn };
       }
     }
@@ -334,13 +464,14 @@ class BehaviorSystemManager {
       }
     }
 
+    npc.energy = Math.min(STAT_BOUNDS.MAX, npc.energy + RECOVERY.REST_ENERGY);
     return { npc: npc.id, skill: 'rest', detail: '无事可做，歇息' };
   }
 
   _doSleep(npc) {
-    const sleepLocs = ['chapel', 'ruins'];
+    const sleepLocs = ['camp', 'ruins'];
     if (!sleepLocs.includes(npc.location)) {
-      npc.location = 'chapel';
+      npc.location = 'camp';
     }
     npc.energy = Math.min(STAT_BOUNDS.MAX, npc.energy + RECOVERY.SLEEP_ENERGY);
     npc.currentSkill = 'sleep';

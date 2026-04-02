@@ -154,9 +154,9 @@ export class ItemSystem {
     }
 
     for (const conItem of (skillDef.consumes || [])) {
-      const parts = conItem.split('|');
-      const anyAvailable = parts.some(
-        p => this.has(npcId, p) || this.has(locationId, p)
+      const alternatives = ItemSystem._parseConsumeEntry(conItem);
+      const anyAvailable = alternatives.some(({ item, qty }) =>
+        this.getQuantity(npcId, item) + this.getQuantity(locationId, item) >= qty
       );
       if (!anyAvailable) {
         missing.push(conItem);
@@ -184,10 +184,16 @@ export class ItemSystem {
     }
 
     for (const conItem of (skillDef.consumes || [])) {
-      const parts = conItem.split('|');
-      for (const p of parts) {
-        const owner = this.has(npcId, p) ? npcId : locationId;
-        if (this.remove(owner, p, 1)) break;
+      const alternatives = ItemSystem._parseConsumeEntry(conItem);
+      for (const { item, qty } of alternatives) {
+        const total = this.getQuantity(npcId, item) + this.getQuantity(locationId, item);
+        if (total >= qty) {
+          let remaining = qty;
+          const npcHas = Math.min(this.getQuantity(npcId, item), remaining);
+          if (npcHas > 0) { this.remove(npcId, item, npcHas); remaining -= npcHas; }
+          if (remaining > 0) { this.remove(locationId, item, remaining); }
+          break;
+        }
       }
     }
 
@@ -254,5 +260,12 @@ export class ItemSystem {
 
   _getSkillDef(skillId) {
     return this._skillIndex.get(skillId) ?? null;
+  }
+
+  static _parseConsumeEntry(entry) {
+    return entry.split('|').map(p => {
+      const [item, qtyStr] = p.split(':');
+      return { item, qty: parseInt(qtyStr) || 1 };
+    });
   }
 }

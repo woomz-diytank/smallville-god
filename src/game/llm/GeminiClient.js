@@ -74,6 +74,8 @@ class GeminiClientManager {
       responseMimeType: 'application/json',
     });
 
+    this.lastRawResponse = text;
+
     console.log('[GeminiClient] Raw response length:', text.length);
     console.log('[GeminiClient] Raw response preview:', text.substring(0, 800));
 

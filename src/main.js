@@ -1,6 +1,7 @@
 import './style.css';
 import GameState from './game/GameState.js';
 import BehaviorSystem from './game/systems/BehaviorSystem.js';
+import SimLogger from './game/systems/SimLogger.js';
 import behaviorLibrary from './game/data/behaviorLibrary.json';
 import { TIME, UI } from './game/config.js';
 
@@ -11,11 +12,16 @@ class Game {
 
   init() {
     BehaviorSystem.init();
+    SimLogger.startSession(BehaviorSystem.llmAvailable);
+    window.SimLogger = SimLogger;
+
     this._cacheDOM();
     this._bindEvents();
     GameState.subscribe(() => this.render());
     this.render();
     this._updateTimeline();
+
+    window.addEventListener('beforeunload', () => SimLogger.saveBeforeUnload());
 
     const llmOn = BehaviorSystem.llmAvailable;
     const badge = document.getElementById('llm-badge');
@@ -66,6 +72,18 @@ class Game {
         this._startTimer();
       }
     });
+
+    document.getElementById('btn-download-log').addEventListener('click', () => {
+      SimLogger.download();
+    });
+
+    const prevBtn = document.getElementById('btn-download-prev');
+    if (SimLogger.hasPreviousLog()) {
+      prevBtn.style.display = '';
+      prevBtn.addEventListener('click', () => SimLogger.downloadPrevious());
+    } else {
+      prevBtn.style.display = 'none';
+    }
 
     this.els.timelineNodes.addEventListener('click', (e) => {
       const node = e.target.closest('.tl-node');
@@ -166,6 +184,9 @@ class Game {
     this.els.day.textContent = `第 ${time.day} 天`;
     this.els.hour.textContent = `${String(time.hour).padStart(2, '0')}:00`;
     this.els.phase.textContent = phase.nameCn;
+
+    const ruinsCard = document.querySelector('.location-card[data-id="ruins"] .loc-name');
+    if (ruinsCard) ruinsCard.textContent = GameState.getRuinsDisplayName();
 
     const items = BehaviorSystem.getItemSystem();
     const npcSource = snapshot ? snapshot.npcs : GameState.state.npcs;

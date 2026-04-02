@@ -18,6 +18,8 @@
         <span id="llm-badge">--</span>
         <button id="btn-pause">▶</button>
         <button id="btn-speed">1x</button>
+        <button id="btn-download-log" title="下载当前运行日志">LOG</button>
+        <button id="btn-download-prev" title="下载上次运行日志" style="display:none">PREV</button>
       </div>
     </header>
 
@@ -27,28 +29,18 @@
     </div>
 
     <main id="world">
-      <div class="location-card" data-id="square">
-        <h3 class="loc-name">广场</h3>
-        <div class="loc-npcs"></div>
-        <div class="loc-items"></div>
-      </div>
-      <div class="location-card" data-id="chapel">
-        <h3 class="loc-name">废弃教堂</h3>
-        <div class="loc-npcs"></div>
-        <div class="loc-items"></div>
-      </div>
-      <div class="location-card" data-id="forge">
-        <h3 class="loc-name">旧铁匠铺</h3>
-        <div class="loc-npcs"></div>
-        <div class="loc-items"></div>
-      </div>
-      <div class="location-card" data-id="ruins">
-        <h3 class="loc-name">废屋区</h3>
+      <div class="location-card" data-id="camp">
+        <h3 class="loc-name">营地</h3>
         <div class="loc-npcs"></div>
         <div class="loc-items"></div>
       </div>
       <div class="location-card" data-id="forest">
         <h3 class="loc-name">森林</h3>
+        <div class="loc-npcs"></div>
+        <div class="loc-items"></div>
+      </div>
+      <div class="location-card" data-id="ruins">
+        <h3 class="loc-name">废屋</h3>
         <div class="loc-npcs"></div>
         <div class="loc-items"></div>
       </div>
