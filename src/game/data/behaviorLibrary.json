@@ -38,7 +38,7 @@
     ],
     "durable": [
       { "id": "axe",          "nameCn": "斧头",     "category": "tool",     "source": ["trade"], "properties": { "maxDurability": 10 } },
-      { "id": "hammer",       "nameCn": "铁锤",     "category": "tool",     "source": ["trade"], "properties": { "maxDurability": 12 } },
+      { "id": "hammer",       "nameCn": "铁锤",     "category": "tool",     "source": ["trade"], "properties": { "maxDurability": 50 } },
       { "id": "bow",          "nameCn": "弓",       "category": "weapon",   "source": ["trade"], "properties": { "maxDurability": 8 } },
       { "id": "needle_thread","nameCn": "针线",     "category": "tool",     "source": ["trade"], "properties": { "maxDurability": 6 } },
       { "id": "cooking_pot",  "nameCn": "铁锅",     "category": "tool",     "source": ["trade"], "properties": { "maxDurability": 15 } },
@@ -107,13 +107,13 @@
         },
         {
           "id": "build",
-          "nameCn": "修建",
-          "description": "用木材修缮废屋，共需20木材完成修复",
+          "nameCn": "修缮废屋",
+          "description": "修缮废屋使其变为可居住的小屋。开工需茅草×6+石块×10，之后每小时推进1点劳动进度，共需20小时",
           "locations": ["ruins"],
           "requires": ["hammer"],
-          "consumes": ["timber"],
+          "consumes": [],
           "produces": [],
-          "note": "不产出物品，推进房屋修缮进度（每次消耗1木材）"
+          "note": "材料在首次开工时一次性扣除，之后每次执行只投入劳动时间"
         }
       ],
       "utility": [
@@ -204,7 +204,11 @@
         "MENTAL":   ["plan", "observe"],
         "RESTORE":  ["sleep", "eat", "rest"]
       },
-      "background": "Agnes 曾经营一家热闹的客栈，擅长把不同的人拢到一张桌子旁。她是三人中唯一明白只有合作才能活下去的人。她不能砍树、不能打猎、不能修房子，但她能让不愿合作的人坐下来谈，能把猎人带回的生肉变成暖胃的熟食。没有她，另外两个沉默的男人可能各干各的直到冻死。"
+      "initialGoals": {
+        "short": "说服罗德里克和奥斯卡合作，尽快备齐修缮废屋的材料",
+        "long": "在严冬来临前把废屋修成能住的小屋，让三个人都活下去"
+      },
+      "background": "Agnes 曾经营一家热闹的客栈，擅长把不同的人拢到一张桌子旁。她是三人中唯一明白只有合作才能活下去的人。她不能砍树、不能打猎、不能修房子，但她能让不愿合作的人坐下来谈，能把猎人带回的生肉变成暖胃的熟食。没有她，另外两个沉默的男人可能各干各的直到冻死。她看了一眼那间破败的废屋，就知道——如果入冬前不把它修好，谁都撑不过去。"
     },
 
     "roderic": {
@@ -227,6 +231,10 @@
         "SOCIAL":   ["trade"],
         "MENTAL":   ["observe"],
         "RESTORE":  ["sleep", "eat", "rest"]
+      },
+      "initialGoals": {
+        "short": "多打些猎物，囤积肉和皮毛准备过冬",
+        "long": "靠自己的本事活过这个冬天"
       },
       "background": "Roderic 从小跟着父亲在林子里长大，十几岁就能独自追踪猎物。除了打猎，他还从母亲那里学会了鞣制兽皮、缝制皮衣的手艺。他更喜欢独处，觉得和别人打交道是浪费时间。但他心里清楚——深冬时一个人是活不下去的，只是不愿意承认。"
     },
@@ -251,6 +259,10 @@
         "SOCIAL":   ["gossip"],
         "MENTAL":   ["plan"],
         "RESTORE":  ["sleep", "eat", "rest"]
+      },
+      "initialGoals": {
+        "short": "多砍些木材囤起来，冬天要烧很多柴",
+        "long": "靠自己的力气和手艺熬过这个冬天"
       },
       "background": "Oskar 做了三十年木匠和泥瓦匠，盖过的房子比他说过的话都多。他看一眼废墟就知道哪堵墙还能用、哪根梁需要换。他只想安安静静地干活——砍树、修房子、搬石头。他不懂打猎，也不会做饭，独自一人时就靠啃浆果度日。让他开口说话比让他扛一根圆木还难。"
     }

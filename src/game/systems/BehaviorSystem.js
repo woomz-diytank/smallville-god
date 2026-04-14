@@ -8,7 +8,7 @@ import { parseGroupResponse } from '../llm/scriptParser.js';
 import MindSystem from './MindSystem.js';
 import {
   TIME, NEEDS, ENV_TEMPERATURE, ENERGY_COST, RECOVERY, THRESHOLD,
-  GATHER, STARTING_ITEMS, LLM, STAT_BOUNDS, MIND,
+  GATHER, STARTING_ITEMS, LLM, STAT_BOUNDS, MIND, BUILDING,
 } from '../config.js';
 import SimLogger from './SimLogger.js';
 
@@ -284,15 +284,17 @@ class BehaviorSystemManager {
       return;
     }
 
+    if (skillId === 'build' && locationId === 'ruins') {
+      this._tryBuildRepair(npc);
+      return;
+    }
+
     const skillDef = skillMap.get(skillId);
     if (!skillDef) return;
 
     const check = this.items.canExecuteSkill(npc.id, skillId, locationId);
     if (check.valid) {
       this.items.applySkillResult(npc.id, skillId, locationId);
-      if (skillId === 'build' && locationId === 'ruins') {
-        GameState.advanceRuinsRepair();
-      }
     }
   }
 
@@ -410,19 +412,72 @@ class BehaviorSystemManager {
     const skillDef = skillMap.get(skillId);
     if (!skillDef) return null;
 
+    if (skillId === 'build') {
+      const result = this._tryBuildRepair(npc);
+      if (result) {
+        npc.location = 'ruins';
+        npc.energy -= ENERGY_COST.PHYSICAL;
+        return { npc: npc.id, skill: 'build', detail: result.detail };
+      }
+      return null;
+    }
+
     for (const loc of skillDef.locations) {
       const check = this.items.canExecuteSkill(npc.id, skillId, loc);
       if (check.valid) {
         npc.location = loc;
         this.items.applySkillResult(npc.id, skillId, loc);
         npc.energy -= ENERGY_COST.PHYSICAL;
-        if (skillId === 'build' && loc === 'ruins') {
-          GameState.advanceRuinsRepair();
-        }
         return { npc: npc.id, skill: skillId, detail: skillDef.nameCn };
       }
     }
     return null;
+  }
+
+  /**
+   * Attempt to repair ruins. First build action consumes materials from
+   * storehouse/ruins/npc; subsequent actions only invest labor time.
+   * Returns { detail } on success, null if blocked.
+   */
+  _tryBuildRepair(npc) {
+    if (GameState.isRuinsRepaired()) return null;
+    if (!npc.skills.PHYSICAL.includes('build')) return null;
+
+    const hasHammer = this.items.has(npc.id, 'hammer') ||
+                      this.items.has('ruins', 'hammer');
+    if (!hasHammer) return null;
+
+    if (!GameState.areMaterialsDelivered()) {
+      const sources = ['storehouse', 'ruins', npc.id];
+
+      // Pre-check: verify all materials are available before consuming any
+      for (const [matId, qty] of Object.entries(BUILDING.MATERIALS)) {
+        let total = 0;
+        for (const src of sources) total += this.items.getQuantity(src, matId);
+        if (total < qty) return null;
+      }
+
+      // All materials confirmed — consume them
+      for (const [matId, qty] of Object.entries(BUILDING.MATERIALS)) {
+        let need = qty;
+        for (const src of sources) {
+          const have = this.items.getQuantity(src, matId);
+          if (have <= 0) continue;
+          const take = Math.min(have, need);
+          this.items.remove(src, matId, take);
+          need -= take;
+          if (need <= 0) break;
+        }
+      }
+      GameState.deliverRuinsMaterials();
+    }
+
+    GameState.advanceRuinsRepair();
+    const p = GameState.state.ruinsRepairProgress;
+    if (GameState.isRuinsRepaired()) {
+      return { detail: `修缮完成！废屋变成了小屋` };
+    }
+    return { detail: `修缮废屋 (${p}/${BUILDING.LABOR_HOURS}h)` };
   }
 
   _tryProductive(npc) {

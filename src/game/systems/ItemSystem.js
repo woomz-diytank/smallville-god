@@ -156,7 +156,7 @@ export class ItemSystem {
     for (const conItem of (skillDef.consumes || [])) {
       const alternatives = ItemSystem._parseConsumeEntry(conItem);
       const anyAvailable = alternatives.some(({ item, qty }) =>
-        this.getQuantity(npcId, item) + this.getQuantity(locationId, item) >= qty
+        this.getQuantity(npcId, item) + this.getQuantity(locationId, item) + this.getQuantity('storehouse', item) >= qty
       );
       if (!anyAvailable) {
         missing.push(conItem);
@@ -186,19 +186,21 @@ export class ItemSystem {
     for (const conItem of (skillDef.consumes || [])) {
       const alternatives = ItemSystem._parseConsumeEntry(conItem);
       for (const { item, qty } of alternatives) {
-        const total = this.getQuantity(npcId, item) + this.getQuantity(locationId, item);
+        const total = this.getQuantity(npcId, item) + this.getQuantity(locationId, item) + this.getQuantity('storehouse', item);
         if (total >= qty) {
           let remaining = qty;
           const npcHas = Math.min(this.getQuantity(npcId, item), remaining);
           if (npcHas > 0) { this.remove(npcId, item, npcHas); remaining -= npcHas; }
-          if (remaining > 0) { this.remove(locationId, item, remaining); }
+          const locHas = Math.min(this.getQuantity(locationId, item), remaining);
+          if (locHas > 0) { this.remove(locationId, item, locHas); remaining -= locHas; }
+          if (remaining > 0) { this.remove('storehouse', item, remaining); }
           break;
         }
       }
     }
 
     for (const prodItem of (skillDef.produces || [])) {
-      this.add(locationId, prodItem, 1);
+      this.add('storehouse', prodItem, 1);
     }
 
     return true;

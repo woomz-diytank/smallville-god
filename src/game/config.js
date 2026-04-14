@@ -124,7 +124,8 @@ export const MIND = {
 
 // ─── 建筑修复 ───────────────────────────────────────
 export const BUILDING = {
-  RUINS_REPAIR_COST: 20,   // 废屋修复所需总木材
+  MATERIALS: { thatch: 6, stone: 10 },  // 开工前一次性消耗的材料
+  LABOR_HOURS: 20,                       // 修复所需总劳动小时
 };
 
 // ─── 统一上下限 ─────────────────────────────────────

@@ -5,12 +5,7 @@ import { buildConsolidationPrompt } from '../llm/prompts.js';
 import { MIND, LLM } from '../config.js';
 import SimLogger from './SimLogger.js';
 
-const INITIAL_GOALS = {
-  SURVIVE: { short: '确保食物和燃料充足', long: '安全度过这个冬天' },
-  PRODUCE: { short: '做好手头的工作', long: '为营地建设贡献自己的手艺' },
-  BOND:    { short: '关心身边的人', long: '让大家团结在一起不散伙' },
-  SEEK:    { short: '弄清楚周围的环境和资源', long: '寻找让所有人长久活下去的办法' },
-};
+const FALLBACK_GOALS = { short: '确保食物和燃料充足', long: '安全度过这个冬天' };
 
 class MindSystemManager {
   init() {
@@ -24,9 +19,7 @@ class MindSystemManager {
   _setInitialGoals(npc) {
     const def = behaviorLibrary.npcs[npc.id];
     if (!def) return;
-    const topNeedKey = Object.entries(def.needs)
-      .sort((a, b) => b[1].weight - a[1].weight)[0][0];
-    const goals = INITIAL_GOALS[topNeedKey] || INITIAL_GOALS.SURVIVE;
+    const goals = def.initialGoals || FALLBACK_GOALS;
     npc.shortTermGoal = goals.short;
     npc.longTermGoal = goals.long;
   }

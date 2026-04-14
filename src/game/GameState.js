@@ -55,7 +55,8 @@ class GameStateManager {
       },
       npcs: buildInitialNpcs(),
       locations: JSON.parse(JSON.stringify(behaviorLibrary.locations)),
-      ruinsRepairProgress: 0,
+      ruinsRepairProgress: 0,    // labor hours invested
+      ruinsMaterialsDelivered: false,
       log: [],
       dayTimeline: {},
       viewingHour: null,
@@ -189,23 +190,33 @@ class GameStateManager {
     return this.state.time.speed;
   }
 
+  deliverRuinsMaterials() {
+    this.state.ruinsMaterialsDelivered = true;
+  }
+
+  areMaterialsDelivered() {
+    return this.state.ruinsMaterialsDelivered;
+  }
+
   advanceRuinsRepair() {
-    if (this.state.ruinsRepairProgress >= BUILDING.RUINS_REPAIR_COST) return false;
+    if (this.state.ruinsRepairProgress >= BUILDING.LABOR_HOURS) return false;
     this.state.ruinsRepairProgress++;
-    if (this.state.ruinsRepairProgress >= BUILDING.RUINS_REPAIR_COST) {
+    if (this.state.ruinsRepairProgress >= BUILDING.LABOR_HOURS) {
       this.state.locations.ruins.nameCn = '小屋';
     }
     return true;
   }
 
   isRuinsRepaired() {
-    return this.state.ruinsRepairProgress >= BUILDING.RUINS_REPAIR_COST;
+    return this.state.ruinsRepairProgress >= BUILDING.LABOR_HOURS;
   }
 
   getRuinsDisplayName() {
     if (this.isRuinsRepaired()) return '小屋';
     const p = this.state.ruinsRepairProgress;
-    return p > 0 ? `废屋 (${p}/${BUILDING.RUINS_REPAIR_COST})` : '废屋';
+    if (p > 0) return `废屋 (${p}/${BUILDING.LABOR_HOURS}h)`;
+    if (this.state.ruinsMaterialsDelivered) return '废屋 (备料完成)';
+    return '废屋';
   }
 }
 

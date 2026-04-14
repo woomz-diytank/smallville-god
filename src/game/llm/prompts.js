@@ -66,14 +66,29 @@ export function buildGroupPrompt({ npcs, locationId, itemSystem, hour, day, phas
   const storeItems = fmtItems(itemSystem, 'storehouse');
 
   const ruinsProgress = GameState.state.ruinsRepairProgress;
-  const ruinsInfo = ruinsProgress >= BUILDING.RUINS_REPAIR_COST
-    ? '废屋已修复为小屋' : `废屋修缮进度:${ruinsProgress}/${BUILDING.RUINS_REPAIR_COST}`;
+  const materialsReady = GameState.areMaterialsDelivered();
+  let ruinsInfo;
+  if (ruinsProgress >= BUILDING.LABOR_HOURS) {
+    ruinsInfo = '废屋已修复为小屋';
+  } else if (materialsReady) {
+    ruinsInfo = `废屋修缮中：劳动进度${ruinsProgress}/${BUILDING.LABOR_HOURS}小时（材料已备齐）`;
+  } else {
+    const matDesc = Object.entries(BUILDING.MATERIALS).map(([id, qty]) => {
+      const def = behaviorLibrary.items.consumable.find(i => i.id === id);
+      return `${def?.nameCn || id}×${qty}`;
+    }).join('+');
+    ruinsInfo = `废屋待修缮：需先备齐材料(${matDesc})，再投入${BUILDING.LABOR_HOURS}小时劳动`;
+  }
+
+  const survivalTip = ruinsProgress >= BUILDING.LABOR_HOURS
+    ? ''
+    : `\n【生存常识】严冬将至，露天营地无法抵御风雪，必须在入冬前把废屋修成小屋。修缮需要专业技能(只有奥斯卡会build)，但奥斯卡只想埋头砍柴，觉得囤够木材就能熬过冬天，需要被说服才会把精力转向修屋。采集修缮材料(茅草forage、石块gather_stone)也需要人手。如果奥斯卡和罗德里克都去修屋备料，打猎采食的工作就会落在更少人身上——罗德里克可能不愿意承担额外的负担。阿格尼丝需要说服他们理解合作的必要性，协调谁该做什么。`;
 
   const prompt = `你是一个中世纪生存模拟的导演。第${day}天 ${hour}:00，${phase.nameCn}，生存压力:${phase.survivalPressure}。
 
 地点:${locName}，物资:[${locItems}]
 仓库:[${storeItems}]
-${ruinsInfo}
+${ruinsInfo}${survivalTip}
 ${npcItems ? '随身:\n' + npcItems : ''}
 
 当前人物:
