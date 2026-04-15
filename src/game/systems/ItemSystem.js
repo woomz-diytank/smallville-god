@@ -117,6 +117,16 @@ export class ItemSystem {
     return { broken: false, durability: item.durability };
   }
 
+  setDurability(ownerId, itemId, value) {
+    const inv = this._resolve(ownerId);
+    if (!inv || !this._registry.isDurable(itemId)) return false;
+    const instances = inv[itemId];
+    if (!instances || instances.length === 0) return false;
+    const max = this._registry.getMaxDurability(itemId);
+    instances[0].durability = Math.min(value, max);
+    return true;
+  }
+
   repairItem(ownerId, itemId) {
     const inv = this._resolve(ownerId);
     if (!inv || !this._registry.isDurable(itemId)) return false;
@@ -129,6 +139,40 @@ export class ItemSystem {
     );
     worst.durability = this._registry.getMaxDurability(itemId);
     return true;
+  }
+
+  /**
+   * Get current durability of a durable item. Returns { current, max } or null.
+   * Searches across all NPC and location inventories if ownerId is not specified.
+   */
+  getDurability(ownerId, itemId) {
+    const inv = this._resolve(ownerId);
+    if (!inv || !inv[itemId] || !Array.isArray(inv[itemId]) || inv[itemId].length === 0) return null;
+    const max = this._registry.getMaxDurability(itemId);
+    return { current: inv[itemId][0].durability, max };
+  }
+
+  getToolReport() {
+    const tools = ['axe', 'hammer', 'bow', 'needle_thread', 'cooking_pot'];
+    const report = [];
+    const foundIds = new Set();
+    const allIds = [...Object.keys(this._npcInv), ...Object.keys(this._locationInv)];
+    for (const toolId of tools) {
+      for (const ownerId of allIds) {
+        const d = this.getDurability(ownerId, toolId);
+        if (!d) continue;
+        const def = this._registry.get(toolId);
+        report.push({ id: toolId, nameCn: def?.nameCn || toolId, owner: ownerId, ...d, missing: false });
+        foundIds.add(toolId);
+      }
+    }
+    for (const toolId of tools) {
+      if (foundIds.has(toolId)) continue;
+      const def = this._registry.get(toolId);
+      const max = this._registry.getMaxDurability(toolId) || 0;
+      report.push({ id: toolId, nameCn: def?.nameCn || toolId, owner: null, current: 0, max, missing: true });
+    }
+    return report;
   }
 
   // ------------------------------------------------------------------

@@ -9,6 +9,7 @@ import MindSystem from './MindSystem.js';
 import {
   TIME, NEEDS, ENV_TEMPERATURE, ENERGY_COST, RECOVERY, THRESHOLD,
   GATHER, STARTING_ITEMS, LLM, STAT_BOUNDS, MIND, BUILDING,
+  TOOL_RECIPES, REPAIR_COST, REPAIR_AMOUNT,
 } from '../config.js';
 import SimLogger from './SimLogger.js';
 
@@ -288,6 +289,14 @@ class BehaviorSystemManager {
       this._tryBuildRepair(npc);
       return;
     }
+    if (skillId === 'repair_tool') {
+      this._tryRepairTool(npc);
+      return;
+    }
+    if (skillId === 'craft_tool') {
+      this._tryCraftTool(npc);
+      return;
+    }
 
     const skillDef = skillMap.get(skillId);
     if (!skillDef) return;
@@ -421,6 +430,24 @@ class BehaviorSystemManager {
       }
       return null;
     }
+    if (skillId === 'repair_tool') {
+      const result = this._tryRepairTool(npc);
+      if (result) {
+        npc.location = 'camp';
+        npc.energy -= ENERGY_COST.PHYSICAL;
+        return { npc: npc.id, skill: 'repair_tool', detail: result.detail };
+      }
+      return null;
+    }
+    if (skillId === 'craft_tool') {
+      const result = this._tryCraftTool(npc);
+      if (result) {
+        npc.location = 'camp';
+        npc.energy -= ENERGY_COST.PHYSICAL;
+        return { npc: npc.id, skill: 'craft_tool', detail: result.detail };
+      }
+      return null;
+    }
 
     for (const loc of skillDef.locations) {
       const check = this.items.canExecuteSkill(npc.id, skillId, loc);
@@ -478,6 +505,88 @@ class BehaviorSystemManager {
       return { detail: `修缮完成！废屋变成了小屋` };
     }
     return { detail: `修缮废屋 (${p}/${BUILDING.LABOR_HOURS}h)` };
+  }
+
+  _tryRepairTool(npc) {
+    const toolReport = this.items.getToolReport();
+    const worn = toolReport
+      .filter(t => t.current < t.max)
+      .sort((a, b) => (a.current / a.max) - (b.current / b.max));
+    if (worn.length === 0) return null;
+
+    const target = worn[0];
+    const isHammerSelf = target.id === 'hammer';
+    if (!isHammerSelf && !this.items.has(npc.id, 'hammer') && !this.items.has('camp', 'hammer')) {
+      return null;
+    }
+
+    const sources = [npc.id, 'camp', 'storehouse'];
+    for (const [matId, qty] of Object.entries(REPAIR_COST)) {
+      let total = 0;
+      for (const src of sources) total += this.items.getQuantity(src, matId);
+      if (total < qty) return null;
+    }
+
+    for (const [matId, qty] of Object.entries(REPAIR_COST)) {
+      let need = qty;
+      for (const src of sources) {
+        const have = this.items.getQuantity(src, matId);
+        if (have <= 0) continue;
+        const take = Math.min(have, need);
+        this.items.remove(src, matId, take);
+        need -= take;
+        if (need <= 0) break;
+      }
+    }
+
+    const newDur = Math.min(target.current + REPAIR_AMOUNT, target.max);
+    this.items.setDurability(target.owner, target.id, newDur);
+    return { detail: `修理${target.nameCn} (${target.current}→${newDur}/${target.max})` };
+  }
+
+  _tryCraftTool(npc) {
+    const priority = ['axe', 'bow', 'needle_thread', 'cooking_pot', 'hammer'];
+    const allTools = this.items.getToolReport();
+    const existingIds = new Set(allTools.map(t => t.id));
+
+    const missingId = priority.find(id => !existingIds.has(id));
+    if (!missingId) return null;
+
+    const recipe = TOOL_RECIPES[missingId];
+    if (!recipe) return null;
+
+    if (!recipe.noToolRequired) {
+      if (!this.items.has(npc.id, 'hammer') && !this.items.has('camp', 'hammer')) {
+        return null;
+      }
+    }
+
+    const sources = [npc.id, 'camp', 'storehouse'];
+    for (const [matId, qty] of Object.entries(recipe.materials)) {
+      let total = 0;
+      for (const src of sources) total += this.items.getQuantity(src, matId);
+      if (total < qty) return null;
+    }
+
+    for (const [matId, qty] of Object.entries(recipe.materials)) {
+      let need = qty;
+      for (const src of sources) {
+        const have = this.items.getQuantity(src, matId);
+        if (have <= 0) continue;
+        const take = Math.min(have, need);
+        this.items.remove(src, matId, take);
+        need -= take;
+        if (need <= 0) break;
+      }
+    }
+
+    const itemDef = behaviorLibrary.items.find(i => i.id === missingId);
+    const maxDur = itemDef?.properties?.maxDurability;
+    this.items.add('camp', missingId, 1);
+    if (maxDur) this.items.setDurability('camp', missingId, maxDur);
+
+    const nameCn = itemDef?.nameCn || missingId;
+    return { detail: `制作了新的${nameCn}` };
   }
 
   _tryProductive(npc) {

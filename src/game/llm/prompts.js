@@ -30,6 +30,48 @@ function fmtItems(itemSystem, ownerId) {
   return parts.length > 0 ? parts.join(' ') : '无';
 }
 
+function buildSurvivalContext(itemSystem, phase) {
+  const tips = [];
+
+  const ruinsProgress = GameState.state.ruinsRepairProgress;
+  if (ruinsProgress < BUILDING.LABOR_HOURS) {
+    tips.push('露天营地无法抵御严冬风雪，必须把废屋修成小屋。只有奥斯卡会build，但他只想砍柴囤木材，需要被说服。采集修缮材料(茅草forage、石块gather_stone)也需要人手协作。');
+  }
+
+  const furCoats = itemSystem.getQuantity('storehouse', 'fur_coat')
+    + itemSystem.getQuantity('agnes', 'fur_coat')
+    + itemSystem.getQuantity('roderic', 'fur_coat')
+    + itemSystem.getQuantity('oskar', 'fur_coat');
+  if (furCoats < 3) {
+    const hides = itemSystem.getQuantity('storehouse', 'hide');
+    tips.push(`过冬需要3件皮毛外套(现有${furCoats}件)。每件需兽皮×3，只有罗德里克能打猎获取兽皮并缝制衣物。现有兽皮${hides}张。罗德里克的弓耐久有限，每次狩猎都会消耗——得在弓断之前攒够皮毛。`);
+  }
+
+  const cookedMeat = itemSystem.getQuantity('storehouse', 'cooked_meat');
+  const rawMeat = itemSystem.getQuantity('storehouse', 'raw_meat');
+  const berries = itemSystem.getQuantity('storehouse', 'berries');
+  if (phase.survivalPressure !== 'low' || cookedMeat < 5) {
+    tips.push(`隆冬时森林极度危险，届时将无法狩猎采集，必须提前储备食物。当前库存：熟肉${cookedMeat}、生肉${rawMeat}(会腐烂，需尽快烹饪)、浆果${berries}。只有阿格尼丝能烹饪，罗德里克是唯一猎人。`);
+  }
+
+  const toolReport = itemSystem.getToolReport();
+  const worn = toolReport
+    .filter(t => !t.missing && t.current <= Math.ceil(t.max * 0.5))
+    .map(t => `${t.nameCn}(${t.owner})耐久${t.current}/${t.max}`);
+  const missing = toolReport
+    .filter(t => t.missing)
+    .map(t => t.nameCn);
+  if (worn.length > 0 || missing.length > 0) {
+    let toolTip = '奥斯卡可以在营地修理(repair_tool,消耗石块×1,恢复耐久+5)或重新制作工具(craft_tool,消耗材料较多)。';
+    if (worn.length > 0) toolTip += `磨损警告：${worn.join('、')}。`;
+    if (missing.length > 0) toolTip += `已损坏缺失：${missing.join('、')}，需要重新制作。`;
+    tips.push(toolTip);
+  }
+
+  if (tips.length === 0) return '';
+  return '\n【生存形势】' + tips.join(' ');
+}
+
 /**
  * @param mindContext - Map<npcId, { memoryStr, commitStr }> from MindSystem
  */
@@ -80,15 +122,13 @@ export function buildGroupPrompt({ npcs, locationId, itemSystem, hour, day, phas
     ruinsInfo = `废屋待修缮：需先备齐材料(${matDesc})，再投入${BUILDING.LABOR_HOURS}小时劳动`;
   }
 
-  const survivalTip = ruinsProgress >= BUILDING.LABOR_HOURS
-    ? ''
-    : `\n【生存常识】严冬将至，露天营地无法抵御风雪，必须在入冬前把废屋修成小屋。修缮需要专业技能(只有奥斯卡会build)，但奥斯卡只想埋头砍柴，觉得囤够木材就能熬过冬天，需要被说服才会把精力转向修屋。采集修缮材料(茅草forage、石块gather_stone)也需要人手。如果奥斯卡和罗德里克都去修屋备料，打猎采食的工作就会落在更少人身上——罗德里克可能不愿意承担额外的负担。阿格尼丝需要说服他们理解合作的必要性，协调谁该做什么。`;
+  const survivalContext = buildSurvivalContext(itemSystem, phase);
 
   const prompt = `你是一个中世纪生存模拟的导演。第${day}天 ${hour}:00，${phase.nameCn}，生存压力:${phase.survivalPressure}。
 
 地点:${locName}，物资:[${locItems}]
 仓库:[${storeItems}]
-${ruinsInfo}${survivalTip}
+${ruinsInfo}${survivalContext}
 ${npcItems ? '随身:\n' + npcItems : ''}
 
 当前人物:

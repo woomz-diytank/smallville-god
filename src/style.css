@@ -338,6 +338,11 @@ body {
   font-weight: 600;
   font-size: 0.85em;
   min-width: 70px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.npc-name:hover {
+  color: var(--accent);
 }
 
 .npc-skill {
@@ -418,6 +423,150 @@ body {
 .log-entry .log-npc {
   color: var(--text);
   font-weight: 600;
+}
+
+/* NPC Panel Overlay */
+#npc-panel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  animation: fadeIn 0.15s ease-out;
+}
+#npc-panel-overlay.hidden { display: none; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+#npc-panel {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  width: 380px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  animation: slideUp 0.2s ease-out;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+#npc-panel-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+#npc-panel-name {
+  font-size: 1.2em;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+#npc-panel-age {
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+
+.panel-section {
+  margin-bottom: 14px;
+}
+
+.panel-section-title {
+  font-size: 0.72em;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+/* Stats bars in panel */
+.panel-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.panel-stat-label {
+  font-size: 0.82em;
+  color: var(--text-muted);
+  min-width: 36px;
+}
+
+.panel-stat-bar {
+  flex: 1;
+  height: 7px;
+  border-radius: 4px;
+  background: #2a2a3a;
+  overflow: hidden;
+}
+
+.panel-stat-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.panel-stat-fill.hunger { background: var(--warn); }
+.panel-stat-fill.energy { background: var(--safe); }
+
+.panel-stat-value {
+  font-size: 0.78em;
+  color: var(--text-muted);
+  min-width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Goals */
+.panel-goal {
+  font-size: 0.85em;
+  line-height: 1.6;
+  padding: 4px 0;
+}
+.panel-goal-label {
+  color: var(--text-muted);
+  font-size: 0.78em;
+  margin-right: 4px;
+}
+
+/* Skills */
+.panel-skill-group {
+  margin-bottom: 6px;
+}
+.panel-skill-group-name {
+  font-size: 0.75em;
+  color: var(--blue);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.panel-skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.panel-skill-tag {
+  font-size: 0.78em;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+/* Background */
+.panel-bg-text {
+  font-size: 0.8em;
+  line-height: 1.7;
+  color: var(--text-muted);
 }
 
 /* Scrollbar */

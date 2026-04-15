@@ -85,6 +85,19 @@ class Game {
       prevBtn.style.display = 'none';
     }
 
+    document.getElementById('app').addEventListener('click', (e) => {
+      const nameEl = e.target.closest('.npc-name[data-npc-id]');
+      if (nameEl) {
+        e.stopPropagation();
+        this._openNpcPanel(nameEl.dataset.npcId);
+      }
+    });
+
+    const overlay = document.getElementById('npc-panel-overlay');
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) this._closeNpcPanel();
+    });
+
     this.els.timelineNodes.addEventListener('click', (e) => {
       const node = e.target.closest('.tl-node');
       if (!node || node.classList.contains('never')) return;
@@ -174,6 +187,83 @@ class Game {
     this.els.timelineLabel.className = isViewing ? 'viewing' : '';
   }
 
+  _openNpcPanel(npcId) {
+    const npc = GameState.getNpc(npcId);
+    if (!npc) return;
+    const def = behaviorLibrary.npcs[npcId];
+    if (!def) return;
+
+    document.getElementById('npc-panel-name').textContent = npc.nameCn;
+    document.getElementById('npc-panel-age').textContent = `${def.age}岁`;
+
+    document.getElementById('npc-panel-stats').innerHTML = `
+      <div class="panel-section">
+        <div class="panel-section-title">生存状态</div>
+        ${this._panelStatBar('饱食', 'hunger', npc.hunger)}
+        ${this._panelStatBar('体力', 'energy', npc.energy)}
+      </div>`;
+
+    const shortGoal = npc.shortTermGoal || def.initialGoals?.short || '—';
+    const longGoal = npc.longTermGoal || def.initialGoals?.long || '—';
+    document.getElementById('npc-panel-goals').innerHTML = `
+      <div class="panel-section">
+        <div class="panel-section-title">目标</div>
+        <div class="panel-goal"><span class="panel-goal-label">近期:</span>${shortGoal}</div>
+        <div class="panel-goal"><span class="panel-goal-label">远期:</span>${longGoal}</div>
+      </div>`;
+
+    const allSkills = [
+      ...behaviorLibrary.skills.PHYSICAL.extraction,
+      ...behaviorLibrary.skills.PHYSICAL.crafting,
+      ...behaviorLibrary.skills.PHYSICAL.utility,
+    ];
+    const socialSkills = behaviorLibrary.skills.SOCIAL;
+    const mentalSkills = behaviorLibrary.skills.MENTAL;
+
+    const groups = [
+      { label: '体力', ids: def.skills.PHYSICAL, defs: allSkills },
+      { label: '社交', ids: def.skills.SOCIAL, defs: socialSkills },
+      { label: '思维', ids: def.skills.MENTAL, defs: mentalSkills },
+    ];
+
+    const skillHtml = groups
+      .filter(g => g.ids && g.ids.length > 0)
+      .map(g => {
+        const tags = g.ids.map(id => {
+          const s = g.defs.find(d => d.id === id);
+          return `<span class="panel-skill-tag">${s?.nameCn || id}</span>`;
+        }).join('');
+        return `<div class="panel-skill-group"><div class="panel-skill-group-name">${g.label}</div><div class="panel-skill-tags">${tags}</div></div>`;
+      }).join('');
+
+    document.getElementById('npc-panel-skills').innerHTML = `
+      <div class="panel-section">
+        <div class="panel-section-title">技能</div>
+        ${skillHtml}
+      </div>`;
+
+    document.getElementById('npc-panel-bg').innerHTML = `
+      <div class="panel-section">
+        <div class="panel-section-title">背景</div>
+        <div class="panel-bg-text">${def.background}</div>
+      </div>`;
+
+    document.getElementById('npc-panel-overlay').classList.remove('hidden');
+  }
+
+  _closeNpcPanel() {
+    document.getElementById('npc-panel-overlay').classList.add('hidden');
+  }
+
+  _panelStatBar(label, type, value) {
+    const v = Math.round(value);
+    return `<div class="panel-stat-row">
+      <span class="panel-stat-label">${label}</span>
+      <div class="panel-stat-bar"><div class="panel-stat-fill ${type}" style="width:${v}%"></div></div>
+      <span class="panel-stat-value">${v}</span>
+    </div>`;
+  }
+
   render() {
     const { time } = GameState.state;
     const phase = GameState.getPhase();
@@ -199,7 +289,7 @@ class Game {
       } else {
         els.npcs.innerHTML = npcsHere.map(npc => `
           <div class="npc-row">
-            <span class="npc-name">${npc.nameCn}</span>
+            <span class="npc-name" data-npc-id="${npc.id}">${npc.nameCn}</span>
             <span class="npc-skill">${npc.thought || npc.currentSkill || '待命'}</span>
             <div class="npc-bars">
               <div class="bar bar-hunger" title="饱食 ${Math.round(npc.hunger)}">

@@ -122,6 +122,17 @@ export const MIND = {
   CONSOLIDATION_HOUR: 22,    // 睡眠整理在哪个小时触发（仅第一次）
 };
 
+// ─── 工具修理与制作 ─────────────────────────────────
+export const TOOL_RECIPES = {
+  axe:           { materials: { timber: 2, stone: 2 }, noToolRequired: false },
+  bow:           { materials: { timber: 2, hide: 1 },  noToolRequired: false },
+  needle_thread: { materials: { hide: 1, thatch: 1 },  noToolRequired: false },
+  cooking_pot:   { materials: { stone: 3 },             noToolRequired: false },
+  hammer:        { materials: { timber: 1, stone: 2 },  noToolRequired: true },
+};
+export const REPAIR_COST = { stone: 1 };
+export const REPAIR_AMOUNT = 5;
+
 // ─── 建筑修复 ───────────────────────────────────────
 export const BUILDING = {
   MATERIALS: { thatch: 6, stone: 10 },  // 开工前一次性消耗的材料
