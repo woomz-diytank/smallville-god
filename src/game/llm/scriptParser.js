@@ -54,12 +54,14 @@ export function parseGroupResponse(llmResult, npcGroup) {
     const id = entry.id;
     if (!id || !NPC_IDS.has(id) || !groupNpcIds.has(id)) continue;
 
-    const npcDef = behaviorLibrary.npcs[id];
+    // 使用 runtime NPC（含后天习得的技能），而不是静态的 behaviorLibrary.npcs[id]
+    const runtimeNpc = npcGroup.find(n => n.id === id);
+    if (!runtimeNpc) continue;
     const allNpcSkills = new Set([
-      ...npcDef.skills.PHYSICAL,
-      ...npcDef.skills.SOCIAL,
-      ...npcDef.skills.MENTAL,
-      ...npcDef.skills.RESTORE,
+      ...runtimeNpc.skills.PHYSICAL,
+      ...runtimeNpc.skills.SOCIAL,
+      ...runtimeNpc.skills.MENTAL,
+      ...runtimeNpc.skills.RESTORE,
       'practice', 'learn_from',
     ]);
 
@@ -69,8 +71,19 @@ export function parseGroupResponse(llmResult, npcGroup) {
     const brief = typeof entry.brief === 'string'
       ? entry.brief.slice(0, TEXT_LIMIT.BRIEF_MAX) : '';
 
+    let target = null;
+    if (skill === 'practice' || skill === 'learn_from') {
+      if (typeof entry.target === 'string' && ALL_SKILL_IDS.has(entry.target)
+          && entry.target !== 'practice' && entry.target !== 'learn_from') {
+        target = entry.target;
+      } else {
+        console.warn(`[Parser] Learning action for ${id} missing/invalid target: ${entry.target}`);
+        continue;
+      }
+    }
+
     if (location && skill) {
-      actions.set(id, { location, skill, brief });
+      actions.set(id, { location, skill, brief, target });
     } else {
       console.warn(`[Parser] Invalid entry for ${id}: loc=${entry.loc} skill=${entry.skill}`);
     }

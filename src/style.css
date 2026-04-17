@@ -570,6 +570,47 @@ body {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text);
 }
+.panel-skill-tag.learned {
+  background: rgba(91, 192, 138, 0.15);
+  color: var(--safe);
+  border: 1px solid rgba(91, 192, 138, 0.45);
+}
+
+/* Learning progress */
+.panel-learn-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+  font-size: 0.8em;
+}
+.panel-learn-label {
+  flex: 0 0 64px;
+  color: var(--text-muted);
+}
+.panel-learn-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.panel-learn-fill {
+  height: 100%;
+  background: var(--accent, #7aa5ff);
+}
+.panel-learn-value {
+  flex: 0 0 44px;
+  text-align: right;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Mastery log entry */
+.log-entry.log-mastery {
+  color: var(--safe);
+  font-weight: 500;
+}
 
 /* Background */
 .panel-bg-text {

@@ -1,6 +1,48 @@
 import behaviorLibrary from '../data/behaviorLibrary.json';
-import { THRESHOLD, BUILDING_PROJECTS } from '../config.js';
+import { THRESHOLD, BUILDING_PROJECTS, LEARNING } from '../config.js';
 import GameState from '../GameState.js';
+
+function fmtSkillName(skillId) {
+  const all = [
+    ...behaviorLibrary.skills.PHYSICAL.extraction,
+    ...behaviorLibrary.skills.PHYSICAL.crafting,
+    ...behaviorLibrary.skills.PHYSICAL.utility,
+    ...behaviorLibrary.skills.SOCIAL,
+    ...behaviorLibrary.skills.MENTAL,
+    ...behaviorLibrary.skills.RESTORE,
+  ];
+  return all.find(s => s.id === skillId)?.nameCn || skillId;
+}
+
+function buildLearningInfo(npc, npcsAtLocation) {
+  const lines = [];
+  const progressEntries = Object.entries(npc.skillProgress || {});
+  if (progressEntries.length > 0) {
+    const parts = progressEntries.map(
+      ([id, v]) => `${id}(${v}/${LEARNING.AUTO_MASTER_AT})`
+    );
+    lines.push(`正在学习: ${parts.join(' ')}`);
+  }
+
+  const learnable = GameState.getLearnableSkills(npc.id);
+  if (learnable.length > 0) {
+    const teachers = [];
+    for (const skillId of learnable) {
+      const teacher = npcsAtLocation.find(
+        other => other.id !== npc.id
+          && [...other.skills.PHYSICAL, ...other.skills.SOCIAL,
+              ...other.skills.MENTAL, ...other.skills.RESTORE].includes(skillId)
+      );
+      if (teacher) teachers.push(`${skillId}←${teacher.nameCn}`);
+    }
+    const sample = learnable.slice(0, 6).join('/');
+    const more = learnable.length > 6 ? `等${learnable.length}项` : '';
+    let line = `可学习: ${sample}${more}`;
+    if (teachers.length > 0) line += `；同地老师: ${teachers.slice(0, 4).join('、')}`;
+    lines.push(line);
+  }
+  return lines.join('\n  ');
+}
 
 function fmtMaterials(materials) {
   return Object.entries(materials).map(([id, qty]) => {
@@ -141,6 +183,8 @@ export function buildGroupPrompt({ npcs, locationId, itemSystem, hour, day, phas
     if (npc.shortTermGoal) block += `\n  近期目标: ${npc.shortTermGoal}`;
     if (commitStr !== '(无)') block += `\n  今日约定: ${commitStr}`;
     if (memoryStr) block += `\n  今天经历: ${memoryStr}`;
+    const learningInfo = buildLearningInfo(npc, npcs);
+    if (learningInfo) block += `\n  ${learningInfo}`;
 
     return block;
   }).join('\n');
@@ -173,10 +217,11 @@ ${npcLines}
 3. 可以移动到其他地点（${allLocationIds}）
 4. 饱食度<${THRESHOLD.HUNGER_LOW}应优先进食，进食技能是eat，一次可以吃多份直到吃饱
 5. 有约定时应优先履行约定
-${npcs.length >= 2 ? `6. 同一地点有多人时，应自然地产生对话——打招呼、商量事情、表达想法、闲聊皆可，对话应反映角色性格
-7. 如果对话中商定了未来的安排（如明天一起做某事），记录为commitment` : ''}
+6. 学习新技能：skill="practice"(自学) 或 "learn_from"(请教同地点的老师)，需要在 target 字段填目标技能 id。learn_from 要同地点有掌握该技能的 NPC；practice 随时可练但更慢。累积到${LEARNING.AUTO_MASTER_AT}点才可能真正掌握。只在有心情/目标明确时安排，不必每个人都学。
+${npcs.length >= 2 ? `7. 同一地点有多人时，应自然地产生对话——打招呼、商量事情、表达想法、闲聊皆可，对话应反映角色性格
+8. 如果对话中商定了未来的安排（如明天一起做某事），记录为commitment` : ''}
 输出JSON:
-{"actions":[{"id":"npc_id","loc":"location_id","skill":"skill_id","brief":"简述(15字内)"}]${npcs.length >= 2 ? ',"talks":[{"who":"npc_id","say":"台词"}],"commitments":[{"npc":"npc_id","day":2,"hour":8,"text":"约定内容","with":"other_id"}]' : ''}}
+{"actions":[{"id":"npc_id","loc":"location_id","skill":"skill_id","target":"目标技能id(仅学习时填)","brief":"简述(15字内)"}]${npcs.length >= 2 ? ',"talks":[{"who":"npc_id","say":"台词"}],"commitments":[{"npc":"npc_id","day":2,"hour":8,"text":"约定内容","with":"other_id"}]' : ''}}
 ${npcs.length >= 2 ? 'talks鼓励产生——同地多人时几乎总会说点什么；commitments仅在明确约定未来安排时才需要。' : ''}`;
 
   return prompt;
@@ -195,6 +240,17 @@ export function buildConsolidationPrompt({ npc, npcDef, day, phase }) {
   const prevContext = npc.daySummary
     ? `\n昨天回顾: ${npc.daySummary}` : '';
 
+  const progressEntries = Object.entries(npc.skillProgress || {});
+  const learningBlock = progressEntries.length > 0
+    ? `\n当前学习进度:\n${progressEntries
+        .map(([id, v]) => `- ${fmtSkillName(id)}(${id}): ${v}/${LEARNING.AUTO_MASTER_AT}`)
+        .join('\n')}`
+    : '';
+
+  const masteryInstruction = progressEntries.length > 0
+    ? `\nmasteredToday: 如果某项技能今天达到质变（进度≥${LEARNING.BASE_THRESHOLD}且叙事上你确实掌握了），填入该技能 id，如 ["cook"]。否则填空数组。`
+    : '';
+
   return `你是${npc.nameCn}，${npc.age}岁。${bg}
 性格: ${traits}。看重: ${values}。害怕: ${fears}。
 
@@ -203,17 +259,18 @@ export function buildConsolidationPrompt({ npc, npcDef, day, phase }) {
 当前目标——近期: ${npc.shortTermGoal || '(无)'} | 长期: ${npc.longTermGoal || '(无)'}
 
 今天做的事:
-${memoryLines}
+${memoryLines}${learningBlock}
 
 现在是睡前，回顾一天。请输出JSON:
 {
   "daySummary": "用1-2句话总结今天（从你的视角）",
   "shortTermGoal": "接下来几天最想做的事（1句话）",
   "longTermGoal": "长远来看最重要的事（1句话）",
-  "commitments": []
+  "commitments": [],
+  "masteredToday": []
 }
-commitments只在今天和别人明确约好了什么事时才填写，格式: [{"day":${day + 1},"hour":8,"text":"内容","with":"npc_id"}]
-大部分时候commitments为空数组。`;
+commitments只在今天和别人明确约好了什么事时才填写，格式: [{"day":${day + 1},"hour":8,"text":"内容","with":"npc_id"}]${masteryInstruction}
+大部分时候commitments和masteredToday都是空数组。`;
 }
 
 export function buildSoloPrompt({ npc, locationId, itemSystem, hour, day, phase }) {

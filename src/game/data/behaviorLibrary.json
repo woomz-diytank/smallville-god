@@ -180,7 +180,23 @@
 
     "MENTAL": [
       { "id": "plan",    "nameCn": "筹划", "description": "制定资源分配策略、行动计划",       "locations": ["storehouse", "camp"] },
-      { "id": "observe", "nameCn": "观察", "description": "监测天气变化、巡视周边环境",       "locations": ["forest", "camp"] }
+      { "id": "observe", "nameCn": "观察", "description": "监测天气变化、巡视周边环境",       "locations": ["forest", "camp"] },
+      {
+        "id": "practice",
+        "nameCn": "练习",
+        "description": "自学某项目标技能，积累熟练度。action 需在 target 字段指定目标技能 id",
+        "locations": ["camp", "forest", "ruins", "storehouse", "house_agnes", "house_roderic", "house_oskar", "workshop", "smokehouse", "shrine"],
+        "meta": true,
+        "note": "每次执行进度 +1；累积到阈值后由日终心智整理判定是否习得"
+      },
+      {
+        "id": "learn_from",
+        "nameCn": "请教",
+        "description": "向同地点掌握该技能的 NPC 学习。进度比自学更快。action 需在 target 字段指定目标技能 id",
+        "locations": ["camp", "forest", "ruins", "storehouse", "house_agnes", "house_roderic", "house_oskar", "workshop", "smokehouse", "shrine"],
+        "meta": true,
+        "note": "每次执行进度 +2；需要同地点有掌握该技能的 NPC；无老师时降级为 practice"
+      }
     ],
 
     "RESTORE": [
@@ -262,7 +278,7 @@
       "skills": {
         "PHYSICAL": ["cook", "forage", "tend_fire", "smoke_meat"],
         "SOCIAL":   ["coordinate", "persuade", "comfort", "negotiate"],
-        "MENTAL":   ["plan", "observe"],
+        "MENTAL":   ["plan", "observe", "practice", "learn_from"],
         "RESTORE":  ["sleep", "eat", "rest"]
       },
       "initialGoals": {
@@ -290,7 +306,7 @@
       "skills": {
         "PHYSICAL": ["hunt", "craft_clothing", "forage"],
         "SOCIAL":   ["trade"],
-        "MENTAL":   ["observe"],
+        "MENTAL":   ["observe", "practice", "learn_from"],
         "RESTORE":  ["sleep", "eat", "rest"]
       },
       "initialGoals": {
@@ -318,7 +334,7 @@
       "skills": {
         "PHYSICAL": ["chop_wood", "build", "gather_stone", "haul", "tend_fire", "repair_tool", "craft_tool"],
         "SOCIAL":   ["gossip"],
-        "MENTAL":   ["plan"],
+        "MENTAL":   ["plan", "practice", "learn_from"],
         "RESTORE":  ["sleep", "eat", "rest"]
       },
       "initialGoals": {

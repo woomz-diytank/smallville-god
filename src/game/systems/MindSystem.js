@@ -2,7 +2,7 @@ import behaviorLibrary from '../data/behaviorLibrary.json';
 import GameState from '../GameState.js';
 import GeminiClient from '../llm/GeminiClient.js';
 import { buildConsolidationPrompt } from '../llm/prompts.js';
-import { MIND, LLM } from '../config.js';
+import { MIND, LLM, LEARNING } from '../config.js';
 import SimLogger from './SimLogger.js';
 
 const FALLBACK_GOALS = { short: '确保食物和燃料充足', long: '安全度过这个冬天' };
@@ -70,6 +70,23 @@ class MindSystemManager {
     GameState._notify();
   }
 
+  /** 清空 NPC 的"今日已掌握"列表。应在新一天的第一个 tick 处理前调用。 */
+  resetLearnedToday() {
+    for (const npc of GameState.getAllNpcs()) {
+      npc.learnedToday = [];
+    }
+  }
+
+  /** 规则兜底：对进度 >= AUTO_MASTER_AT 的技能直接授予。 */
+  _applyMasteryRule(npc) {
+    const entries = Object.entries(npc.skillProgress || {});
+    for (const [skillId, v] of entries) {
+      if (v >= LEARNING.AUTO_MASTER_AT) {
+        GameState.grantSkill(npc.id, skillId);
+      }
+    }
+  }
+
   _ruleConsolidate(npc, day) {
     const texts = npc.memory.map(m => m.text);
     const summary = texts.length > 0
@@ -83,6 +100,7 @@ class MindSystemManager {
       }
     }
     npc.daySummary = summary;
+    this._applyMasteryRule(npc);
     npc.memory = [];
     this.clearExpiredCommitments(npc, day + 1);
   }
@@ -114,6 +132,17 @@ class MindSystemManager {
       if (result.longTermGoal && typeof result.longTermGoal === 'string') {
         npc.longTermGoal = result.longTermGoal.slice(0, 40);
       }
+
+      if (Array.isArray(result.masteredToday)) {
+        for (const skillId of result.masteredToday) {
+          if (typeof skillId !== 'string') continue;
+          const progress = npc.skillProgress?.[skillId] || 0;
+          if (progress >= LEARNING.BASE_THRESHOLD) {
+            GameState.grantSkill(npc.id, skillId);
+          }
+        }
+      }
+      this._applyMasteryRule(npc);
 
       if (Array.isArray(result.commitments)) {
         for (const c of result.commitments) {

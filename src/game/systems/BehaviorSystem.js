@@ -11,6 +11,7 @@ import {
   GATHER, STARTING_ITEMS, LLM, STAT_BOUNDS, MIND, BUILDING, BUILDING_PROJECTS,
   TOOL_RECIPES, REPAIR_COST, REPAIR_AMOUNT,
   HOUSE_SLEEP_MULTIPLIER, WORKSHOP_REPAIR_AMOUNT, WORKSHOP_CRAFT_DISCOUNT,
+  LEARNING,
 } from '../config.js';
 import SimLogger from './SimLogger.js';
 
@@ -32,6 +33,7 @@ class BehaviorSystemManager {
     this.registry = null;
     this.llmAvailable = false;
     this.llmBusy = false;
+    this._lastDay = null;
   }
 
   init() {
@@ -74,6 +76,11 @@ class BehaviorSystemManager {
     const sleeping = hour >= TIME.NIGHT_START || hour < TIME.NIGHT_END;
     const pressure = phase.survivalPressure || 'low';
     const coldMult = ENV_TEMPERATURE[pressure] ?? ENV_TEMPERATURE.DEFAULT;
+
+    if (this._lastDay !== day) {
+      MindSystem.resetLearnedToday();
+      this._lastDay = day;
+    }
 
     for (const npc of npcs) {
       this._applyNeeds(npc, phase, sleeping);
@@ -162,7 +169,7 @@ class BehaviorSystemManager {
           npc.location = decision.location;
           npc.currentSkill = decision.skill;
           npc.thought = decision.brief;
-          this._applySkillItems(npc, decision.skill, decision.location);
+          this._applySkillItems(npc, decision.skill, decision.location, decision.target);
 
           MindSystem.recordMemory(npc, hour, decision.brief);
           events.push({ npcName: npc.nameCn, text: decision.brief });
@@ -271,9 +278,17 @@ class BehaviorSystemManager {
     }
   }
 
-  _applySkillItems(npc, skillId, locationId) {
+  _applySkillItems(npc, skillId, locationId, target = null) {
     if (skillId === 'eat') {
       this._eatUntilFull(npc);
+      return;
+    }
+    if (skillId === 'practice') {
+      this._tryPractice(npc, target);
+      return;
+    }
+    if (skillId === 'learn_from') {
+      this._tryLearnFrom(npc, target, locationId);
       return;
     }
 
@@ -644,6 +659,112 @@ class BehaviorSystemManager {
     return { detail: `制作了新的${nameCn}${bonusTag}` };
   }
 
+  // ─── 技能学习 ────────────────────────────────────
+  /**
+   * 返回 NPC 已掌握的所有技能 id 集合（不含元技能）。
+   */
+  _collectNpcSkills(npc) {
+    return new Set([
+      ...npc.skills.PHYSICAL,
+      ...npc.skills.SOCIAL,
+      ...npc.skills.MENTAL,
+      ...npc.skills.RESTORE,
+    ]);
+  }
+
+  /**
+   * 自学练习某技能：每次 +PRACTICE_GAIN 进度。
+   * 若 target 未指定或已掌握，则回退为原地休息（详情空，avoid 奇怪日志）。
+   */
+  _tryPractice(npc, targetSkill) {
+    if (!targetSkill) return null;
+    const cat = GameState.getSkillCategory(targetSkill);
+    if (!cat) return null;
+    if (this._collectNpcSkills(npc).has(targetSkill)) {
+      delete npc.skillProgress[targetSkill];
+      return null;
+    }
+    const cur = (npc.skillProgress[targetSkill] || 0) + LEARNING.PRACTICE_GAIN;
+    npc.skillProgress[targetSkill] = cur;
+    npc.thought = `练习 ${this._skillNameCn(targetSkill)} (${cur}/${LEARNING.AUTO_MASTER_AT})`;
+
+    if (cur >= LEARNING.AUTO_MASTER_AT && !this.llmAvailable) {
+      GameState.grantSkill(npc.id, targetSkill);
+      npc.thought = `掌握了 ${this._skillNameCn(targetSkill)}`;
+    }
+    return { detail: npc.thought };
+  }
+
+  /**
+   * 向同地点的 NPC 请教某技能：每次 +LEARN_FROM_GAIN。
+   * 若无合适老师，降级为 practice（gain 变为 PRACTICE_GAIN）避免空转。
+   */
+  _tryLearnFrom(npc, targetSkill, locationId) {
+    if (!targetSkill) return null;
+    const cat = GameState.getSkillCategory(targetSkill);
+    if (!cat) return null;
+    if (this._collectNpcSkills(npc).has(targetSkill)) {
+      delete npc.skillProgress[targetSkill];
+      return null;
+    }
+
+    const locId = locationId || npc.location;
+    const teacher = GameState.getAllNpcs().find(other => {
+      if (other.id === npc.id) return false;
+      if (other.location !== locId) return false;
+      return this._collectNpcSkills(other).has(targetSkill);
+    });
+
+    const gain = teacher ? LEARNING.LEARN_FROM_GAIN : LEARNING.PRACTICE_GAIN;
+    const cur = (npc.skillProgress[targetSkill] || 0) + gain;
+    npc.skillProgress[targetSkill] = cur;
+
+    if (teacher) {
+      npc.thought = `向 ${teacher.nameCn} 学 ${this._skillNameCn(targetSkill)} (${cur}/${LEARNING.AUTO_MASTER_AT})`;
+    } else {
+      npc.thought = `独自揣摩 ${this._skillNameCn(targetSkill)} (${cur}/${LEARNING.AUTO_MASTER_AT})`;
+    }
+
+    if (cur >= LEARNING.AUTO_MASTER_AT && !this.llmAvailable) {
+      GameState.grantSkill(npc.id, targetSkill);
+      npc.thought = `掌握了 ${this._skillNameCn(targetSkill)}`;
+    }
+    return { detail: npc.thought };
+  }
+
+  _skillNameCn(skillId) {
+    const all = [
+      ...behaviorLibrary.skills.PHYSICAL.extraction,
+      ...behaviorLibrary.skills.PHYSICAL.crafting,
+      ...behaviorLibrary.skills.PHYSICAL.utility,
+      ...behaviorLibrary.skills.SOCIAL,
+      ...behaviorLibrary.skills.MENTAL,
+      ...behaviorLibrary.skills.RESTORE,
+    ];
+    return all.find(s => s.id === skillId)?.nameCn || skillId;
+  }
+
+  /**
+   * 规则路径下兜底延续学习进度。
+   * 若 NPC 已有学习进度（>0），延续 practice 那一项。
+   * 不会在规则路径主动开启新学习项——保守策略。
+   */
+  _tryLearn(npc) {
+    const progress = npc.skillProgress || {};
+    const entries = Object.entries(progress);
+    if (entries.length === 0) return null;
+
+    entries.sort((a, b) => b[1] - a[1]);
+    const [targetSkill] = entries[0];
+    const result = this._tryPractice(npc, targetSkill);
+    if (result) {
+      npc.currentSkill = 'practice';
+      npc.energy -= ENERGY_COST.MENTAL;
+      return { npc: npc.id, skill: 'practice', detail: result.detail };
+    }
+    return null;
+  }
+
   _tryProductive(npc) {
     const physicalSkills = npc.skills.PHYSICAL.filter(
       s => !['tend_fire', 'haul'].includes(s)
@@ -671,7 +792,13 @@ class BehaviorSystemManager {
       }
     }
 
-    const mentalSkills = npc.skills.MENTAL || [];
+    // 规则路径兜底延续已有学习进度（不主动开启新学习）
+    const learnResult = this._tryLearn(npc);
+    if (learnResult) return learnResult;
+
+    const mentalSkills = (npc.skills.MENTAL || []).filter(
+      s => s !== 'practice' && s !== 'learn_from'
+    );
     if (mentalSkills.length > 0) {
       const mental = pick(mentalSkills);
       const mentalDef = behaviorLibrary.skills.MENTAL.find(s => s.id === mental);

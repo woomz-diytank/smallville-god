@@ -157,6 +157,17 @@ export const BUILDING = {
   LABOR_HOURS: BUILDING_PROJECTS.ruins.laborHours,
 };
 
+// ─── 技能学习 ───────────────────────────────────────
+// 混合进度模型：达到 BASE_THRESHOLD 后由 LLM 在日终整理时判定是否习得
+// 未达到则继续积累；超过 AUTO_MASTER_AT 是规则降级时的兜底必定习得阈值
+export const LEARNING = {
+  BASE_THRESHOLD: 3,        // LLM 开始被询问是否习得的最低进度
+  PRACTICE_GAIN: 1,         // practice 每次 +1
+  LEARN_FROM_GAIN: 2,       // learn_from 每次 +2
+  AUTO_MASTER_AT: 8,        // 规则降级/兜底：达到此值必定习得
+  MAX_DISPLAY: 10,          // UI 进度条的视觉上限
+};
+
 // ─── 统一上下限 ─────────────────────────────────────
 export const STAT_BOUNDS = {
   MIN: 0,

@@ -1,5 +1,6 @@
 import behaviorLibrary from './data/behaviorLibrary.json';
 import { TIME, INITIAL_STATS, UI, BUILDING_PROJECTS } from './config.js';
+import SimLogger from './systems/SimLogger.js';
 
 function getPhase(week) {
   const phases = behaviorLibrary.winterPhases;
@@ -17,7 +18,12 @@ function buildInitialNpcs() {
       name: def.name,
       nameCn: def.nameCn,
       age: def.age,
-      skills: def.skills,
+      skills: {
+        PHYSICAL: [...(def.skills.PHYSICAL || [])],
+        SOCIAL:   [...(def.skills.SOCIAL || [])],
+        MENTAL:   [...(def.skills.MENTAL || [])],
+        RESTORE:  [...(def.skills.RESTORE || [])],
+      },
       needs: def.needs,
       personality: def.personality,
       background: def.background,
@@ -33,6 +39,8 @@ function buildInitialNpcs() {
       longTermGoal: '',
       daySummary: '',
       pastSummaries: [],
+      skillProgress: {},
+      learnedToday: [],
     };
   }
   return npcs;
@@ -262,6 +270,98 @@ class GameStateManager {
   isWorkshopBuilt()   { return this.isProjectComplete('workshop'); }
   isSmokehouseBuilt() { return this.isProjectComplete('smokehouse'); }
   isShrineBuilt()     { return this.isProjectComplete('shrine'); }
+
+  // ─── 技能学习 ────────────────────────────────────
+  /**
+   * 查询某技能 id 属于哪个大类（PHYSICAL/SOCIAL/MENTAL/RESTORE）
+   * 返回 null 表示未知技能。
+   */
+  getSkillCategory(skillId) {
+    const skills = behaviorLibrary.skills;
+    const physFlat = [
+      ...skills.PHYSICAL.extraction,
+      ...skills.PHYSICAL.crafting,
+      ...skills.PHYSICAL.utility,
+    ];
+    if (physFlat.some(s => s.id === skillId)) return 'PHYSICAL';
+    if (skills.SOCIAL.some(s => s.id === skillId)) return 'SOCIAL';
+    if (skills.MENTAL.some(s => s.id === skillId)) return 'MENTAL';
+    if (skills.RESTORE.some(s => s.id === skillId)) return 'RESTORE';
+    return null;
+  }
+
+  /**
+   * NPC 尚未掌握的所有可学技能 id（排除元技能与已掌握的）。
+   */
+  getLearnableSkills(npcId) {
+    const npc = this.state.npcs[npcId];
+    if (!npc) return [];
+    const have = new Set([
+      ...npc.skills.PHYSICAL,
+      ...npc.skills.SOCIAL,
+      ...npc.skills.MENTAL,
+      ...npc.skills.RESTORE,
+    ]);
+    const META = new Set(['practice', 'learn_from']);
+    const all = [];
+    const skills = behaviorLibrary.skills;
+    for (const s of skills.PHYSICAL.extraction) all.push(s.id);
+    for (const s of skills.PHYSICAL.crafting)   all.push(s.id);
+    for (const s of skills.PHYSICAL.utility)    all.push(s.id);
+    for (const s of skills.SOCIAL)              all.push(s.id);
+    for (const s of skills.MENTAL)              all.push(s.id);
+    for (const s of skills.RESTORE)             all.push(s.id);
+    return all.filter(id => !have.has(id) && !META.has(id));
+  }
+
+  /**
+   * 让 NPC 习得一项新技能。记入 learnedToday，推入对应 category 数组，
+   * 清除该技能的 skillProgress。返回是否实际新增（已掌握或未知技能则 false）。
+   */
+  grantSkill(npcId, skillId) {
+    const npc = this.state.npcs[npcId];
+    if (!npc) return false;
+    const cat = this.getSkillCategory(skillId);
+    if (!cat) return false;
+    if (npc.skills[cat].includes(skillId)) {
+      delete npc.skillProgress[skillId];
+      return false;
+    }
+    npc.skills[cat].push(skillId);
+    delete npc.skillProgress[skillId];
+    if (!npc.learnedToday.includes(skillId)) npc.learnedToday.push(skillId);
+
+    // 技能中文名（可能为 undefined，做兜底）
+    const allSkillDefs = [
+      ...behaviorLibrary.skills.PHYSICAL.extraction,
+      ...behaviorLibrary.skills.PHYSICAL.crafting,
+      ...behaviorLibrary.skills.PHYSICAL.utility,
+      ...behaviorLibrary.skills.SOCIAL,
+      ...behaviorLibrary.skills.MENTAL,
+      ...behaviorLibrary.skills.RESTORE,
+    ];
+    const skillNameCn = allSkillDefs.find(s => s.id === skillId)?.nameCn || skillId;
+
+    const { day, hour } = this.state.time;
+    this.addLog({
+      type: 'mastery',
+      day,
+      hour: `${String(hour).padStart(2, '0')}:00`,
+      npcName: npc.nameCn,
+      text: `掌握了 ${skillNameCn}！`,
+    });
+
+    try {
+      SimLogger.appendMastery({
+        npcId,
+        npcName: npc.nameCn,
+        skillId,
+        skillNameCn,
+      });
+    } catch { /* SimLogger 可能尚未初始化 */ }
+
+    return true;
+  }
 
   // ─── 向下兼容的废屋专用接口（包装层） ──────────────
   deliverRuinsMaterials()  { this.deliverProjectMaterials('ruins'); }

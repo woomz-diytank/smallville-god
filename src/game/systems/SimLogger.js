@@ -106,6 +106,7 @@ class SimLoggerManager {
       llmCalls: [],
       dialogues: [],
       consolidations: [],
+      masteries: [],
     };
 
     for (const npc of npcs) {
@@ -180,6 +181,28 @@ class SimLoggerManager {
         location: decision.location,
         source: 'llm',
       });
+    }
+  }
+
+  /**
+   * 记录技能习得事件。可由 GameState.grantSkill 在任意时机调用；
+   * 会附加到"当前正在记录的 tick"的 masteries 数组（若无正在进行的 tick，则附到最近一条）。
+   */
+  appendMastery({ npcId, npcName, skillId, skillNameCn }) {
+    const entry = {
+      npcId,
+      npcName: npcName || npcId,
+      skillId,
+      skillNameCn: skillNameCn || skillId,
+    };
+    if (this._currentTick) {
+      this._currentTick.masteries.push(entry);
+      return;
+    }
+    if (this._log && this._log.ticks.length > 0) {
+      const last = this._log.ticks[this._log.ticks.length - 1];
+      if (!Array.isArray(last.masteries)) last.masteries = [];
+      last.masteries.push(entry);
     }
   }
 

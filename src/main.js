@@ -3,7 +3,7 @@ import GameState from './game/GameState.js';
 import BehaviorSystem from './game/systems/BehaviorSystem.js';
 import SimLogger from './game/systems/SimLogger.js';
 import behaviorLibrary from './game/data/behaviorLibrary.json';
-import { TIME, UI } from './game/config.js';
+import { TIME, UI, LEARNING } from './game/config.js';
 
 class Game {
   constructor() {
@@ -221,17 +221,24 @@ class Game {
     const mentalSkills = behaviorLibrary.skills.MENTAL;
 
     const groups = [
-      { label: '体力', ids: def.skills.PHYSICAL, defs: allSkills },
-      { label: '社交', ids: def.skills.SOCIAL, defs: socialSkills },
-      { label: '思维', ids: def.skills.MENTAL, defs: mentalSkills },
+      { label: '体力', ids: npc.skills.PHYSICAL, defs: allSkills },
+      { label: '社交', ids: npc.skills.SOCIAL, defs: socialSkills },
+      { label: '思维', ids: npc.skills.MENTAL, defs: mentalSkills },
     ];
+
+    const origPhysical = new Set(def.skills.PHYSICAL || []);
+    const origSocial   = new Set(def.skills.SOCIAL   || []);
+    const origMental   = new Set(def.skills.MENTAL   || []);
+    const origByLabel = { '体力': origPhysical, '社交': origSocial, '思维': origMental };
 
     const skillHtml = groups
       .filter(g => g.ids && g.ids.length > 0)
       .map(g => {
         const tags = g.ids.map(id => {
           const s = g.defs.find(d => d.id === id);
-          return `<span class="panel-skill-tag">${s?.nameCn || id}</span>`;
+          const isLearned = !origByLabel[g.label].has(id);
+          const cls = isLearned ? 'panel-skill-tag learned' : 'panel-skill-tag';
+          return `<span class="${cls}">${s?.nameCn || id}</span>`;
         }).join('');
         return `<div class="panel-skill-group"><div class="panel-skill-group-name">${g.label}</div><div class="panel-skill-tags">${tags}</div></div>`;
       }).join('');
@@ -241,6 +248,29 @@ class Game {
         <div class="panel-section-title">技能</div>
         ${skillHtml}
       </div>`;
+
+    const progressEntries = Object.entries(npc.skillProgress || {});
+    const learnEl = document.getElementById('npc-panel-learning');
+    if (progressEntries.length > 0) {
+      const rows = progressEntries.map(([id, v]) => {
+        const sdef = [...allSkills, ...socialSkills, ...mentalSkills,
+                      ...behaviorLibrary.skills.RESTORE].find(s => s.id === id);
+        const name = sdef?.nameCn || id;
+        const pct = Math.min(100, Math.round((v / LEARNING.MAX_DISPLAY) * 100));
+        return `<div class="panel-learn-row">
+          <span class="panel-learn-label">${name}</span>
+          <div class="panel-learn-bar"><div class="panel-learn-fill" style="width:${pct}%"></div></div>
+          <span class="panel-learn-value">${v}/${LEARNING.AUTO_MASTER_AT}</span>
+        </div>`;
+      }).join('');
+      learnEl.innerHTML = `
+        <div class="panel-section">
+          <div class="panel-section-title">正在学习</div>
+          ${rows}
+        </div>`;
+    } else {
+      learnEl.innerHTML = '';
+    }
 
     document.getElementById('npc-panel-bg').innerHTML = `
       <div class="panel-section">
@@ -365,9 +395,10 @@ class Game {
       ).join('');
       this.els.logContent.innerHTML = logHtml || '<div class="log-entry" style="opacity:0.3">该时段无特别事件</div>';
     } else {
-      const logHtml = GameState.state.log.slice(0, UI.DISPLAY_LOG_LINES).map(e =>
-        `<div class="log-entry"><span class="log-time">[${e.hour}]</span><span class="log-npc">${e.npcName}</span> ${e.text}</div>`
-      ).join('');
+      const logHtml = GameState.state.log.slice(0, UI.DISPLAY_LOG_LINES).map(e => {
+        const cls = e.type === 'mastery' ? 'log-entry log-mastery' : 'log-entry';
+        return `<div class="${cls}"><span class="log-time">[${e.hour}]</span><span class="log-npc">${e.npcName}</span> ${e.text}</div>`;
+      }).join('');
       this.els.logContent.innerHTML = logHtml;
     }
   }
