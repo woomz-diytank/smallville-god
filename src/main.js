@@ -275,8 +275,17 @@ class Game {
     this.els.hour.textContent = `${String(time.hour).padStart(2, '0')}:00`;
     this.els.phase.textContent = phase.nameCn;
 
-    const ruinsCard = document.querySelector('.location-card[data-id="ruins"] .loc-name');
-    if (ruinsCard) ruinsCard.textContent = GameState.getRuinsDisplayName();
+    for (const locId of Object.keys(this.els.locationCards)) {
+      const card = document.querySelector(`.location-card[data-id="${locId}"]`);
+      if (!card) continue;
+      const nameEl = card.querySelector('.loc-name');
+      if (GameState.isProjectBuildable(locId)) {
+        nameEl.textContent = GameState.getProjectDisplayName(locId);
+        card.classList.toggle('unbuilt', !GameState.isProjectComplete(locId));
+      } else {
+        card.classList.remove('unbuilt');
+      }
+    }
 
     const items = BehaviorSystem.getItemSystem();
     const npcSource = snapshot ? snapshot.npcs : GameState.state.npcs;

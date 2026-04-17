@@ -1,6 +1,32 @@
 import behaviorLibrary from '../data/behaviorLibrary.json';
-import { THRESHOLD, BUILDING } from '../config.js';
+import { THRESHOLD, BUILDING_PROJECTS } from '../config.js';
 import GameState from '../GameState.js';
+
+function fmtMaterials(materials) {
+  return Object.entries(materials).map(([id, qty]) => {
+    const def = behaviorLibrary.items.consumable.find(i => i.id === id);
+    return `${def?.nameCn || id}×${qty}`;
+  }).join('+');
+}
+
+function buildProjectsInfo() {
+  const lines = [];
+  for (const [id, def] of Object.entries(BUILDING_PROJECTS)) {
+    const p = GameState.getProject(id);
+    if (!p) continue;
+    if (GameState.isProjectComplete(id)) {
+      lines.push(`- ${def.completedName || def.nameCn}（已建成）`);
+      continue;
+    }
+    const tag = def.assignedTo ? `[给${def.assignedTo}]` : '';
+    if (p.materialsDelivered) {
+      lines.push(`- ${def.nameCn}${tag}：建造中 ${p.progress}/${def.laborHours}h（材料已齐，前往${id}执行 build）`);
+    } else {
+      lines.push(`- ${def.nameCn}${tag}：需材料 ${fmtMaterials(def.materials)}，总劳动${def.laborHours}h（在${id}执行 build）`);
+    }
+  }
+  return lines.join('\n');
+}
 
 function fmtSkills(npc) {
   const all = [
@@ -33,8 +59,7 @@ function fmtItems(itemSystem, ownerId) {
 function buildSurvivalContext(itemSystem, phase) {
   const tips = [];
 
-  const ruinsProgress = GameState.state.ruinsRepairProgress;
-  if (ruinsProgress < BUILDING.LABOR_HOURS) {
+  if (!GameState.isProjectComplete('ruins')) {
     tips.push('露天营地无法抵御严冬风雪，必须把废屋修成小屋。只有奥斯卡会build，但他只想砍柴囤木材，需要被说服。采集修缮材料(茅草forage、石块gather_stone)也需要人手协作。');
   }
 
@@ -49,9 +74,10 @@ function buildSurvivalContext(itemSystem, phase) {
 
   const cookedMeat = itemSystem.getQuantity('storehouse', 'cooked_meat');
   const rawMeat = itemSystem.getQuantity('storehouse', 'raw_meat');
+  const curedMeat = itemSystem.getQuantity('storehouse', 'cured_meat');
   const berries = itemSystem.getQuantity('storehouse', 'berries');
-  if (phase.survivalPressure !== 'low' || cookedMeat < 5) {
-    tips.push(`隆冬时森林极度危险，届时将无法狩猎采集，必须提前储备食物。当前库存：熟肉${cookedMeat}、生肉${rawMeat}(会腐烂，需尽快烹饪)、浆果${berries}。只有阿格尼丝能烹饪，罗德里克是唯一猎人。`);
+  if (phase.survivalPressure !== 'low' || cookedMeat + curedMeat < 5) {
+    tips.push(`隆冬时森林极度危险，届时将无法狩猎采集，必须提前储备食物。当前库存：熟肉${cookedMeat}、腌肉${curedMeat}(不腐烂)、生肉${rawMeat}(会腐烂，需尽快烹饪)、浆果${berries}。只有阿格尼丝能烹饪/烟熏，罗德里克是唯一猎人。`);
   }
 
   const toolReport = itemSystem.getToolReport();
@@ -62,10 +88,29 @@ function buildSurvivalContext(itemSystem, phase) {
     .filter(t => t.missing)
     .map(t => t.nameCn);
   if (worn.length > 0 || missing.length > 0) {
-    let toolTip = '奥斯卡可以在营地修理(repair_tool,消耗石块×1,恢复耐久+5)或重新制作工具(craft_tool,消耗材料较多)。';
+    const workshopHint = GameState.isWorkshopBuilt() ? '（在工坊作业修理+8耐久且制作省木材）' : '';
+    let toolTip = `奥斯卡可以修理(repair_tool,消耗石块×1,恢复耐久+5)或重新制作工具(craft_tool,消耗材料较多)${workshopHint}。`;
     if (worn.length > 0) toolTip += `磨损警告：${worn.join('、')}。`;
     if (missing.length > 0) toolTip += `已损坏缺失：${missing.join('、')}，需要重新制作。`;
     tips.push(toolTip);
+  }
+
+  // 建筑激励：列出除废屋外还有哪些可建造项目
+  const nonRuinsPending = Object.keys(BUILDING_PROJECTS).filter(
+    id => id !== 'ruins' && !GameState.isProjectComplete(id)
+  );
+  if (GameState.isProjectComplete('ruins') && nonRuinsPending.length > 0) {
+    tips.push('废屋已修好，三人可以在专属小屋(house_agnes/roderic/oskar)睡眠获得体力加成；工坊(workshop)让修理制作更高效；烟熏房(smokehouse)让生肉变成不腐烂的腌肉；神龛(shrine)让众人在精神上相依。');
+  }
+
+  // 神龛软提示
+  if (GameState.isShrineBuilt()) {
+    tips.push('神龛已建成，三人在黑暗的冬日中互相支撑，信仰让他们不至于各自孤立。');
+  }
+
+  // 烟熏房建成提示
+  if (GameState.isSmokehouseBuilt()) {
+    tips.push('烟熏房已建成，阿格尼丝可用 smoke_meat 技能（在smokehouse，消耗生肉+木材）产出不会腐烂的腌肉。');
   }
 
   if (tips.length === 0) return '';
@@ -106,21 +151,8 @@ export function buildGroupPrompt({ npcs, locationId, itemSystem, hour, day, phas
   }).filter(Boolean).join('\n');
 
   const storeItems = fmtItems(itemSystem, 'storehouse');
-
-  const ruinsProgress = GameState.state.ruinsRepairProgress;
-  const materialsReady = GameState.areMaterialsDelivered();
-  let ruinsInfo;
-  if (ruinsProgress >= BUILDING.LABOR_HOURS) {
-    ruinsInfo = '废屋已修复为小屋';
-  } else if (materialsReady) {
-    ruinsInfo = `废屋修缮中：劳动进度${ruinsProgress}/${BUILDING.LABOR_HOURS}小时（材料已备齐）`;
-  } else {
-    const matDesc = Object.entries(BUILDING.MATERIALS).map(([id, qty]) => {
-      const def = behaviorLibrary.items.consumable.find(i => i.id === id);
-      return `${def?.nameCn || id}×${qty}`;
-    }).join('+');
-    ruinsInfo = `废屋待修缮：需先备齐材料(${matDesc})，再投入${BUILDING.LABOR_HOURS}小时劳动`;
-  }
+  const projectsInfo = buildProjectsInfo();
+  const allLocationIds = Object.keys(behaviorLibrary.locations).join('/');
 
   const survivalContext = buildSurvivalContext(itemSystem, phase);
 
@@ -128,7 +160,8 @@ export function buildGroupPrompt({ npcs, locationId, itemSystem, hour, day, phas
 
 地点:${locName}，物资:[${locItems}]
 仓库:[${storeItems}]
-${ruinsInfo}${survivalContext}
+【建筑项目】
+${projectsInfo}${survivalContext}
 ${npcItems ? '随身:\n' + npcItems : ''}
 
 当前人物:
@@ -137,7 +170,7 @@ ${npcLines}
 为每人决定这个小时做什么。规则:
 1. 每人应根据自己的性格、目标、约定和当前处境独立决策
 2. 只能使用该人"会"列表中的技能，需要工具的技能必须有对应工具
-3. 可以移动到其他地点（camp/forest/ruins/storehouse）
+3. 可以移动到其他地点（${allLocationIds}）
 4. 饱食度<${THRESHOLD.HUNGER_LOW}应优先进食，进食技能是eat，一次可以吃多份直到吃饱
 5. 有约定时应优先履行约定
 ${npcs.length >= 2 ? `6. 同一地点有多人时，应自然地产生对话——打招呼、商量事情、表达想法、闲聊皆可，对话应反映角色性格

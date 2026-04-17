@@ -1,5 +1,5 @@
 import behaviorLibrary from './data/behaviorLibrary.json';
-import { TIME, INITIAL_STATS, UI, BUILDING } from './config.js';
+import { TIME, INITIAL_STATS, UI, BUILDING_PROJECTS } from './config.js';
 
 function getPhase(week) {
   const phases = behaviorLibrary.winterPhases;
@@ -46,6 +46,10 @@ class GameStateManager {
   }
 
   reset() {
+    const projects = {};
+    for (const id of Object.keys(BUILDING_PROJECTS)) {
+      projects[id] = { progress: 0, materialsDelivered: false };
+    }
     this.state = {
       time: {
         day: 1,
@@ -55,8 +59,7 @@ class GameStateManager {
       },
       npcs: buildInitialNpcs(),
       locations: JSON.parse(JSON.stringify(behaviorLibrary.locations)),
-      ruinsRepairProgress: 0,    // labor hours invested
-      ruinsMaterialsDelivered: false,
+      projects,
       log: [],
       dayTimeline: {},
       viewingHour: null,
@@ -190,34 +193,83 @@ class GameStateManager {
     return this.state.time.speed;
   }
 
-  deliverRuinsMaterials() {
-    this.state.ruinsMaterialsDelivered = true;
+  // ─── 通用建筑项目 API ─────────────────────────────
+  getProject(id) {
+    return this.state.projects[id] || null;
   }
 
-  areMaterialsDelivered() {
-    return this.state.ruinsMaterialsDelivered;
+  getProjectDef(id) {
+    return BUILDING_PROJECTS[id] || null;
   }
 
-  advanceRuinsRepair() {
-    if (this.state.ruinsRepairProgress >= BUILDING.LABOR_HOURS) return false;
-    this.state.ruinsRepairProgress++;
-    if (this.state.ruinsRepairProgress >= BUILDING.LABOR_HOURS) {
-      this.state.locations.ruins.nameCn = '小屋';
+  isProjectBuildable(id) {
+    return !!BUILDING_PROJECTS[id];
+  }
+
+  isProjectComplete(id) {
+    const p = this.state.projects[id];
+    const def = BUILDING_PROJECTS[id];
+    if (!p || !def) return false;
+    return p.progress >= def.laborHours;
+  }
+
+  areProjectMaterialsDelivered(id) {
+    return !!this.state.projects[id]?.materialsDelivered;
+  }
+
+  deliverProjectMaterials(id) {
+    if (this.state.projects[id]) {
+      this.state.projects[id].materialsDelivered = true;
+    }
+  }
+
+  advanceProject(id) {
+    const def = BUILDING_PROJECTS[id];
+    const p = this.state.projects[id];
+    if (!def || !p) return false;
+    if (p.progress >= def.laborHours) return false;
+    p.progress++;
+    if (p.progress >= def.laborHours) {
+      const locName = def.completedName || def.nameCn;
+      if (this.state.locations[id]) {
+        this.state.locations[id].nameCn = locName;
+      }
     }
     return true;
   }
 
-  isRuinsRepaired() {
-    return this.state.ruinsRepairProgress >= BUILDING.LABOR_HOURS;
+  getProjectDisplayName(id) {
+    const def = BUILDING_PROJECTS[id];
+    const p = this.state.projects[id];
+    if (!def || !p) {
+      return this.state.locations[id]?.nameCn || id;
+    }
+    if (this.isProjectComplete(id)) return def.completedName || def.nameCn;
+    const base = id === 'ruins' ? '废屋' : `${def.nameCn}(未建)`;
+    if (p.progress > 0) return `${base} (${p.progress}/${def.laborHours}h)`;
+    if (p.materialsDelivered) return `${base} (备料完成)`;
+    return base;
   }
 
-  getRuinsDisplayName() {
-    if (this.isRuinsRepaired()) return '小屋';
-    const p = this.state.ruinsRepairProgress;
-    if (p > 0) return `废屋 (${p}/${BUILDING.LABOR_HOURS}h)`;
-    if (this.state.ruinsMaterialsDelivered) return '废屋 (备料完成)';
-    return '废屋';
+  // ─── 建筑效果查询 ────────────────────────────────
+  hasHouseSleepBonus(npcId) {
+    for (const [id, def] of Object.entries(BUILDING_PROJECTS)) {
+      if (def.assignedTo === npcId && this.isProjectComplete(id)) return id;
+    }
+    return null;
   }
+
+  isWorkshopBuilt()   { return this.isProjectComplete('workshop'); }
+  isSmokehouseBuilt() { return this.isProjectComplete('smokehouse'); }
+  isShrineBuilt()     { return this.isProjectComplete('shrine'); }
+
+  // ─── 向下兼容的废屋专用接口（包装层） ──────────────
+  deliverRuinsMaterials()  { this.deliverProjectMaterials('ruins'); }
+  areMaterialsDelivered()  { return this.areProjectMaterialsDelivered('ruins'); }
+  advanceRuinsRepair()     { return this.advanceProject('ruins'); }
+  isRuinsRepaired()        { return this.isProjectComplete('ruins'); }
+  getRuinsDisplayName()    { return this.getProjectDisplayName('ruins'); }
+
 }
 
 export const GameState = new GameStateManager();

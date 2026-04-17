@@ -133,10 +133,28 @@ export const TOOL_RECIPES = {
 export const REPAIR_COST = { stone: 1 };
 export const REPAIR_AMOUNT = 5;
 
-// ─── 建筑修复 ───────────────────────────────────────
+// ─── 建筑项目 ───────────────────────────────────────
+// 所有可建造的项目，key 对应场景中的 locationId。
+// 每个项目采用两阶段流程：备料一次性扣除 → 每小时投入 1 点劳动进度。
+export const BUILDING_PROJECTS = {
+  ruins:         { nameCn: '小屋',         materials: { thatch: 6, stone: 10 }, laborHours: 20, assignedTo: null,      completedName: '小屋' },
+  house_agnes:   { nameCn: '阿格尼丝的屋子', materials: { timber: 8, thatch: 4 }, laborHours: 12, assignedTo: 'agnes',   completedName: '阿格尼丝的屋子' },
+  house_roderic: { nameCn: '罗德里克的屋子', materials: { timber: 8, thatch: 4 }, laborHours: 12, assignedTo: 'roderic', completedName: '罗德里克的屋子' },
+  house_oskar:   { nameCn: '奥斯卡的屋子',   materials: { timber: 8, thatch: 4 }, laborHours: 12, assignedTo: 'oskar',   completedName: '奥斯卡的屋子' },
+  workshop:      { nameCn: '工坊',         materials: { timber: 10, stone: 4 }, laborHours: 12, assignedTo: null,      completedName: '工坊' },
+  smokehouse:    { nameCn: '烟熏房',       materials: { stone: 6, timber: 4 },  laborHours: 10, assignedTo: null,      completedName: '烟熏房' },
+  shrine:        { nameCn: '神龛',         materials: { stone: 8, timber: 4 },  laborHours: 15, assignedTo: null,      completedName: '神龛' },
+};
+
+// 建筑效果参数
+export const HOUSE_SLEEP_MULTIPLIER = 1.5;       // NPC 在自己的小屋睡眠时能量恢复倍率
+export const WORKSHOP_REPAIR_AMOUNT = 8;          // 工坊内修理工具的耐久恢复（默认 REPAIR_AMOUNT=5）
+export const WORKSHOP_CRAFT_DISCOUNT = { timber: 1 }; // 工坊内制作工具的材料减免
+
+// 向下兼容：保留旧 BUILDING 常量指向废屋项目
 export const BUILDING = {
-  MATERIALS: { thatch: 6, stone: 10 },  // 开工前一次性消耗的材料
-  LABOR_HOURS: 20,                       // 修复所需总劳动小时
+  MATERIALS: BUILDING_PROJECTS.ruins.materials,
+  LABOR_HOURS: BUILDING_PROJECTS.ruins.laborHours,
 };
 
 // ─── 统一上下限 ─────────────────────────────────────

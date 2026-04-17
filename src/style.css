@@ -305,7 +305,16 @@ body {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  min-height: 160px;
+  min-height: 140px;
+}
+
+.location-card.unbuilt {
+  opacity: 0.55;
+  border-style: dashed;
+}
+.location-card.unbuilt .loc-name {
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .loc-name {

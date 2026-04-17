@@ -8,8 +8,9 @@ import { parseGroupResponse } from '../llm/scriptParser.js';
 import MindSystem from './MindSystem.js';
 import {
   TIME, NEEDS, ENV_TEMPERATURE, ENERGY_COST, RECOVERY, THRESHOLD,
-  GATHER, STARTING_ITEMS, LLM, STAT_BOUNDS, MIND, BUILDING,
+  GATHER, STARTING_ITEMS, LLM, STAT_BOUNDS, MIND, BUILDING, BUILDING_PROJECTS,
   TOOL_RECIPES, REPAIR_COST, REPAIR_AMOUNT,
+  HOUSE_SLEEP_MULTIPLIER, WORKSHOP_REPAIR_AMOUNT, WORKSHOP_CRAFT_DISCOUNT,
 } from '../config.js';
 import SimLogger from './SimLogger.js';
 
@@ -81,7 +82,7 @@ class BehaviorSystemManager {
     const npcIds = Object.keys(behaviorLibrary.npcs);
     const locationIds = Object.keys(behaviorLibrary.locations);
     SimLogger.beginTick(
-      { day, hour, phase, ruinsRepair: GameState.state.ruinsRepairProgress, sleeping, coldMultiplier: coldMult },
+      { day, hour, phase, ruinsRepair: GameState.getProject('ruins')?.progress ?? 0, sleeping, coldMultiplier: coldMult },
       npcs, this.items, npcIds, locationIds,
     );
 
@@ -281,12 +282,14 @@ class BehaviorSystemManager {
       return;
     }
     if (skillId === 'sleep') {
-      npc.energy = Math.min(STAT_BOUNDS.MAX, npc.energy + RECOVERY.SLEEP_ENERGY);
+      const ownHouse = GameState.hasHouseSleepBonus(npc.id);
+      const mult = (ownHouse && npc.location === ownHouse) ? HOUSE_SLEEP_MULTIPLIER : 1;
+      npc.energy = Math.min(STAT_BOUNDS.MAX, npc.energy + RECOVERY.SLEEP_ENERGY * mult);
       return;
     }
 
-    if (skillId === 'build' && locationId === 'ruins') {
-      this._tryBuildRepair(npc);
+    if (skillId === 'build' && GameState.isProjectBuildable(locationId)) {
+      this._tryBuildProject(npc, locationId);
       return;
     }
     if (skillId === 'repair_tool') {
@@ -295,6 +298,9 @@ class BehaviorSystemManager {
     }
     if (skillId === 'craft_tool') {
       this._tryCraftTool(npc);
+      return;
+    }
+    if (skillId === 'smoke_meat' && !GameState.isSmokehouseBuilt()) {
       return;
     }
 
@@ -417,14 +423,15 @@ class BehaviorSystemManager {
 
   _trySkill(npc, skillId) {
     if (!npc.skills.PHYSICAL.includes(skillId)) return null;
-    if (skillId === 'build' && GameState.isRuinsRepaired()) return null;
     const skillDef = skillMap.get(skillId);
     if (!skillDef) return null;
 
     if (skillId === 'build') {
-      const result = this._tryBuildRepair(npc);
+      const targetId = this._pickBuildTarget(npc);
+      if (!targetId) return null;
+      const result = this._tryBuildProject(npc, targetId);
       if (result) {
-        npc.location = 'ruins';
+        npc.location = targetId;
         npc.energy -= ENERGY_COST.PHYSICAL;
         return { npc: npc.id, skill: 'build', detail: result.detail };
       }
@@ -433,7 +440,7 @@ class BehaviorSystemManager {
     if (skillId === 'repair_tool') {
       const result = this._tryRepairTool(npc);
       if (result) {
-        npc.location = 'camp';
+        npc.location = GameState.isWorkshopBuilt() ? 'workshop' : 'camp';
         npc.energy -= ENERGY_COST.PHYSICAL;
         return { npc: npc.id, skill: 'repair_tool', detail: result.detail };
       }
@@ -442,10 +449,13 @@ class BehaviorSystemManager {
     if (skillId === 'craft_tool') {
       const result = this._tryCraftTool(npc);
       if (result) {
-        npc.location = 'camp';
+        npc.location = GameState.isWorkshopBuilt() ? 'workshop' : 'camp';
         npc.energy -= ENERGY_COST.PHYSICAL;
         return { npc: npc.id, skill: 'craft_tool', detail: result.detail };
       }
+      return null;
+    }
+    if (skillId === 'smoke_meat' && !GameState.isSmokehouseBuilt()) {
       return null;
     }
 
@@ -462,30 +472,52 @@ class BehaviorSystemManager {
   }
 
   /**
-   * Attempt to repair ruins. First build action consumes materials from
-   * storehouse/ruins/npc; subsequent actions only invest labor time.
+   * Rule-based selection of which building to work on.
+   * Priority: ruins (highest survival priority) > current location if buildable
+   * > first incomplete project with materials already delivered > any first incomplete project.
+   */
+  _pickBuildTarget(npc) {
+    if (!GameState.isProjectComplete('ruins')) return 'ruins';
+    if (GameState.isProjectBuildable(npc.location) && !GameState.isProjectComplete(npc.location)) {
+      return npc.location;
+    }
+    for (const id of Object.keys(BUILDING_PROJECTS)) {
+      if (!GameState.isProjectComplete(id) && GameState.areProjectMaterialsDelivered(id)) {
+        return id;
+      }
+    }
+    for (const id of Object.keys(BUILDING_PROJECTS)) {
+      if (!GameState.isProjectComplete(id)) return id;
+    }
+    return null;
+  }
+
+  /**
+   * Attempt to advance a building project. First build action consumes materials from
+   * storehouse/project-location/npc; subsequent actions only invest labor time.
    * Returns { detail } on success, null if blocked.
    */
-  _tryBuildRepair(npc) {
-    if (GameState.isRuinsRepaired()) return null;
+  _tryBuildProject(npc, projectId) {
+    const def = BUILDING_PROJECTS[projectId];
+    if (!def) return null;
+    if (GameState.isProjectComplete(projectId)) return null;
     if (!npc.skills.PHYSICAL.includes('build')) return null;
 
     const hasHammer = this.items.has(npc.id, 'hammer') ||
-                      this.items.has('ruins', 'hammer');
+                      this.items.has(projectId, 'hammer') ||
+                      this.items.has('camp', 'hammer');
     if (!hasHammer) return null;
 
-    if (!GameState.areMaterialsDelivered()) {
-      const sources = ['storehouse', 'ruins', npc.id];
+    if (!GameState.areProjectMaterialsDelivered(projectId)) {
+      const sources = ['storehouse', projectId, 'camp', npc.id];
 
-      // Pre-check: verify all materials are available before consuming any
-      for (const [matId, qty] of Object.entries(BUILDING.MATERIALS)) {
+      for (const [matId, qty] of Object.entries(def.materials)) {
         let total = 0;
         for (const src of sources) total += this.items.getQuantity(src, matId);
         if (total < qty) return null;
       }
 
-      // All materials confirmed — consume them
-      for (const [matId, qty] of Object.entries(BUILDING.MATERIALS)) {
+      for (const [matId, qty] of Object.entries(def.materials)) {
         let need = qty;
         for (const src of sources) {
           const have = this.items.getQuantity(src, matId);
@@ -496,15 +528,20 @@ class BehaviorSystemManager {
           if (need <= 0) break;
         }
       }
-      GameState.deliverRuinsMaterials();
+      GameState.deliverProjectMaterials(projectId);
     }
 
-    GameState.advanceRuinsRepair();
-    const p = GameState.state.ruinsRepairProgress;
-    if (GameState.isRuinsRepaired()) {
-      return { detail: `修缮完成！废屋变成了小屋` };
+    GameState.advanceProject(projectId);
+    const p = GameState.getProject(projectId).progress;
+    if (GameState.isProjectComplete(projectId)) {
+      return { detail: `${def.completedName || def.nameCn} 建造完成！` };
     }
-    return { detail: `修缮废屋 (${p}/${BUILDING.LABOR_HOURS}h)` };
+    return { detail: `建造${def.nameCn} (${p}/${def.laborHours}h)` };
+  }
+
+  // 旧接口包装，供历史调用点使用
+  _tryBuildRepair(npc) {
+    return this._tryBuildProject(npc, 'ruins');
   }
 
   _tryRepairTool(npc) {
@@ -539,15 +576,19 @@ class BehaviorSystemManager {
       }
     }
 
-    const newDur = Math.min(target.current + REPAIR_AMOUNT, target.max);
+    const workshopBonus = (npc.location === 'workshop' && GameState.isWorkshopBuilt())
+      ? (WORKSHOP_REPAIR_AMOUNT - REPAIR_AMOUNT)
+      : 0;
+    const newDur = Math.min(target.current + REPAIR_AMOUNT + workshopBonus, target.max);
     this.items.setDurability(target.owner, target.id, newDur);
-    return { detail: `修理${target.nameCn} (${target.current}→${newDur}/${target.max})` };
+    const bonusTag = workshopBonus > 0 ? '（工坊加成）' : '';
+    return { detail: `修理${target.nameCn} (${target.current}→${newDur}/${target.max})${bonusTag}` };
   }
 
   _tryCraftTool(npc) {
     const priority = ['axe', 'bow', 'needle_thread', 'cooking_pot', 'hammer'];
     const allTools = this.items.getToolReport();
-    const existingIds = new Set(allTools.map(t => t.id));
+    const existingIds = new Set(allTools.filter(t => !t.missing).map(t => t.id));
 
     const missingId = priority.find(id => !existingIds.has(id));
     if (!missingId) return null;
@@ -556,19 +597,30 @@ class BehaviorSystemManager {
     if (!recipe) return null;
 
     if (!recipe.noToolRequired) {
-      if (!this.items.has(npc.id, 'hammer') && !this.items.has('camp', 'hammer')) {
+      if (!this.items.has(npc.id, 'hammer') && !this.items.has('camp', 'hammer') && !this.items.has('workshop', 'hammer')) {
         return null;
       }
     }
 
-    const sources = [npc.id, 'camp', 'storehouse'];
-    for (const [matId, qty] of Object.entries(recipe.materials)) {
+    // 工坊加成：材料折扣
+    const workshopActive = npc.location === 'workshop' && GameState.isWorkshopBuilt();
+    const materials = { ...recipe.materials };
+    if (workshopActive) {
+      for (const [mat, discount] of Object.entries(WORKSHOP_CRAFT_DISCOUNT)) {
+        if (materials[mat]) materials[mat] = Math.max(0, materials[mat] - discount);
+      }
+    }
+
+    const sources = [npc.id, 'camp', 'workshop', 'storehouse'];
+    for (const [matId, qty] of Object.entries(materials)) {
+      if (qty <= 0) continue;
       let total = 0;
       for (const src of sources) total += this.items.getQuantity(src, matId);
       if (total < qty) return null;
     }
 
-    for (const [matId, qty] of Object.entries(recipe.materials)) {
+    for (const [matId, qty] of Object.entries(materials)) {
+      if (qty <= 0) continue;
       let need = qty;
       for (const src of sources) {
         const have = this.items.getQuantity(src, matId);
@@ -580,13 +632,16 @@ class BehaviorSystemManager {
       }
     }
 
-    const itemDef = behaviorLibrary.items.find(i => i.id === missingId);
+    const itemDef = [...behaviorLibrary.items.consumable, ...behaviorLibrary.items.durable]
+      .find(i => i.id === missingId);
     const maxDur = itemDef?.properties?.maxDurability;
-    this.items.add('camp', missingId, 1);
-    if (maxDur) this.items.setDurability('camp', missingId, maxDur);
+    const placeAt = workshopActive ? 'workshop' : 'camp';
+    this.items.add(placeAt, missingId, 1);
+    if (maxDur) this.items.setDurability(placeAt, missingId, maxDur);
 
     const nameCn = itemDef?.nameCn || missingId;
-    return { detail: `制作了新的${nameCn}` };
+    const bonusTag = workshopActive ? '（工坊加成）' : '';
+    return { detail: `制作了新的${nameCn}${bonusTag}` };
   }
 
   _tryProductive(npc) {
@@ -633,11 +688,15 @@ class BehaviorSystemManager {
   }
 
   _doSleep(npc) {
-    const sleepLocs = ['camp', 'ruins'];
-    if (!sleepLocs.includes(npc.location)) {
-      npc.location = 'camp';
+    const ownHouse = GameState.hasHouseSleepBonus(npc.id);
+    const sleepLocs = ['camp', 'ruins', 'house_agnes', 'house_roderic', 'house_oskar'];
+    if (ownHouse) {
+      npc.location = ownHouse;
+    } else if (!sleepLocs.includes(npc.location)) {
+      npc.location = GameState.isRuinsRepaired() ? 'ruins' : 'camp';
     }
-    npc.energy = Math.min(STAT_BOUNDS.MAX, npc.energy + RECOVERY.SLEEP_ENERGY);
+    const mult = (ownHouse && npc.location === ownHouse) ? HOUSE_SLEEP_MULTIPLIER : 1;
+    npc.energy = Math.min(STAT_BOUNDS.MAX, npc.energy + RECOVERY.SLEEP_ENERGY * mult);
     npc.currentSkill = 'sleep';
     npc.thought = '';
   }

@@ -31,6 +31,7 @@
       { "id": "berries",     "nameCn": "浆果", "category": "food",     "source": ["forage"],    "properties": { "nourishment": 3 } },
       { "id": "raw_meat",    "nameCn": "生肉", "category": "food",     "source": ["hunt"],      "properties": { "nourishment": 5, "spoilDays": 2 } },
       { "id": "cooked_meat", "nameCn": "熟肉", "category": "food",     "source": ["cook"],      "properties": { "nourishment": 8 } },
+      { "id": "cured_meat",  "nameCn": "腌肉", "category": "food",     "source": ["smoke_meat"],"properties": { "nourishment": 6 }, "note": "烟熏腌制，不腐烂" },
       { "id": "timber",      "nameCn": "木材", "category": "material", "source": ["chop_wood"], "properties": { "fuelValue": 4 }, "note": "建材兼燃料" },
       { "id": "stone",       "nameCn": "石块", "category": "material", "source": ["gather_stone"] },
       { "id": "hide",        "nameCn": "兽皮", "category": "material", "source": ["hunt"] },
@@ -107,13 +108,23 @@
         },
         {
           "id": "build",
-          "nameCn": "修缮废屋",
-          "description": "修缮废屋使其变为可居住的小屋。开工需茅草×6+石块×10，之后每小时推进1点劳动进度，共需20小时",
-          "locations": ["ruins"],
+          "nameCn": "建造",
+          "description": "修缮/建造建筑。在对应建筑地点执行，每项目开工时一次性扣除材料，之后每小时推进1点劳动进度",
+          "locations": ["ruins", "house_agnes", "house_roderic", "house_oskar", "workshop", "smokehouse", "shrine"],
           "requires": ["hammer"],
           "consumes": [],
           "produces": [],
-          "note": "材料在首次开工时一次性扣除，之后每次执行只投入劳动时间"
+          "note": "材料在首次开工时一次性扣除，之后每次执行只投入劳动时间。具体需求见 BUILDING_PROJECTS 配置"
+        },
+        {
+          "id": "smoke_meat",
+          "nameCn": "烟熏腌肉",
+          "description": "在烟熏房用生肉和木材烟熏腌制，产出不腐烂的腌肉",
+          "locations": ["smokehouse"],
+          "requires": [],
+          "consumes": ["raw_meat", "timber"],
+          "produces": ["cured_meat"],
+          "note": "需要烟熏房建成后方可使用"
         }
       ],
       "utility": [
@@ -173,9 +184,9 @@
     ],
 
     "RESTORE": [
-      { "id": "sleep", "nameCn": "睡眠", "description": "完整的休息和睡眠",     "locations": ["camp", "ruins"] },
-      { "id": "eat",   "nameCn": "进食", "description": "食用食物补充体力",       "locations": ["camp", "storehouse"], "consumes": ["cooked_meat|raw_meat|berries"] },
-      { "id": "rest",  "nameCn": "歇息", "description": "不睡觉的轻度休息",       "locations": ["camp", "ruins", "forest", "storehouse"] }
+      { "id": "sleep", "nameCn": "睡眠", "description": "完整的休息和睡眠。在自己的屋子里睡眠能量恢复更快",     "locations": ["camp", "ruins", "house_agnes", "house_roderic", "house_oskar"] },
+      { "id": "eat",   "nameCn": "进食", "description": "食用食物补充体力",       "locations": ["camp", "storehouse"], "consumes": ["cooked_meat|cured_meat|raw_meat|berries"] },
+      { "id": "rest",  "nameCn": "歇息", "description": "不睡觉的轻度休息",       "locations": ["camp", "ruins", "forest", "storehouse", "house_agnes", "house_roderic", "house_oskar", "workshop", "smokehouse", "shrine"] }
     ]
   },
 
@@ -199,6 +210,36 @@
       "nameCn": "储藏室",
       "description": "半完好的地窖，用于储存物资和食物。",
       "winterNote": "存量逐周递减，合理配给至关重要。"
+    },
+    "house_agnes": {
+      "nameCn": "阿格尼丝的屋子",
+      "description": "阿格尼丝的独立居所。建成后她在此睡眠能量恢复更快。",
+      "winterNote": "独立居所能让她休息得更好。"
+    },
+    "house_roderic": {
+      "nameCn": "罗德里克的屋子",
+      "description": "罗德里克的独立居所。建成后他在此睡眠能量恢复更快。",
+      "winterNote": "独处的空间让猎人真正放松。"
+    },
+    "house_oskar": {
+      "nameCn": "奥斯卡的屋子",
+      "description": "奥斯卡的独立居所。建成后他在此睡眠能量恢复更快。",
+      "winterNote": "他终于能睡个踏实的觉。"
+    },
+    "workshop": {
+      "nameCn": "工坊",
+      "description": "修理和制作工具的专用场所。建成后奥斯卡在此作业更高效。",
+      "winterNote": "一间像样的工坊能节省宝贵的材料。"
+    },
+    "smokehouse": {
+      "nameCn": "烟熏房",
+      "description": "烟熏腌制肉食的小屋。建成后可把生肉加工成不腐烂的腌肉。",
+      "winterNote": "烟熏房让食物储备不再受腐烂限制。"
+    },
+    "shrine": {
+      "nameCn": "神龛",
+      "description": "供奉神明的小屋，静默而庄重。建成后在精神上把三人联结在一起。",
+      "winterNote": "漫长冬日里，信仰让孤立的灵魂彼此相连。"
     }
   },
 
@@ -219,7 +260,7 @@
         "fears": ["群体分裂", "有人冻死饿死"]
       },
       "skills": {
-        "PHYSICAL": ["cook", "forage", "tend_fire"],
+        "PHYSICAL": ["cook", "forage", "tend_fire", "smoke_meat"],
         "SOCIAL":   ["coordinate", "persuade", "comfort", "negotiate"],
         "MENTAL":   ["plan", "observe"],
         "RESTORE":  ["sleep", "eat", "rest"]
